@@ -32,5 +32,48 @@ test('uuid: формат v4 і унікальність', () => {
   assert.notStrictEqual(a, b);
 });
 
+// ---- Task 2 ----
+const NOW = '2026-08-11T12:00:00.000Z';
+test('emptyDb: перший запуск за ТЗ §7.1', () => {
+  const db = LMCore.emptyDb(NOW);
+  assert.strictEqual(db.schemaVersion, 1);
+  assert.strictEqual(db.alliances.length, 1);
+  assert.strictEqual(db.alliances[0].name, 'Мій альянс');
+  assert.strictEqual(db.activeAllianceId, db.alliances[0].id);
+  assert.deepStrictEqual(db.items, []);
+  const names = db.classes.map(c => c.name);
+  assert.deepStrictEqual(names, ['Танк', 'Хіл', 'Фріз/Контроль', 'МДД', 'РДД', 'Маг']);
+  const tank = db.classes[0];
+  assert.deepStrictEqual(
+    [tank.wDmg, tank.wTaken, tank.wHeal, tank.isArchived], [0.2, 0.7, 0.1, false]);
+  const pa = db.perAlliance[db.activeAllianceId];
+  assert.deepStrictEqual(
+    { p: pa.players, h: pa.history, e: pa.eventTypes, d: pa.draftSession },
+    { p: [], h: [], e: [], d: null });
+  assert.deepStrictEqual(db.settings, { ...LMCore.DEFAULTS,
+    rarityWeights: { ...LMCore.DEFAULTS.rarityWeights } });
+  assert.notStrictEqual(db.settings, LMCore.DEFAULTS); // копія, не посилання
+  assert.ok(!Object.isFrozen(db.settings.rarityWeights));
+});
+test('migrate: v1 проходить, чужа версія — ні', () => {
+  const db = LMCore.emptyDb(NOW);
+  assert.strictEqual(LMCore.migrate(db).ok, true);
+  const bad = LMCore.migrate({ ...db, schemaVersion: 2 });
+  assert.strictEqual(bad.ok, false);
+  assert.match(bad.error, /версі/i);
+});
+test('validateImport: відхиляє сміття, приймає валідну базу', () => {
+  assert.strictEqual(LMCore.validateImport(null).ok, false);
+  assert.strictEqual(LMCore.validateImport('рядок').ok, false);
+  assert.strictEqual(LMCore.validateImport({ schemaVersion: 99 }).ok, false);
+  const noPA = LMCore.emptyDb(NOW); delete noPA.perAlliance;
+  assert.strictEqual(LMCore.validateImport(noPA).ok, false);
+  const orphan = LMCore.emptyDb(NOW); orphan.perAlliance = {};
+  assert.strictEqual(LMCore.validateImport(orphan).ok, false); // альянс без даних
+  const good = LMCore.validateImport(LMCore.emptyDb(NOW));
+  assert.strictEqual(good.ok, true);
+  assert.ok(good.db);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

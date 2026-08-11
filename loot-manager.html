@@ -27,7 +27,70 @@ const LMCore = (() => {
       const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
     });
   }
-  return { DEFAULTS, RARITY_RANK, uuid };
+  function defaultSettings() {
+    return { ...DEFAULTS, rarityWeights: { ...DEFAULTS.rarityWeights } };
+  }
+
+  const CLASS_SEED = [
+    ['Танк', 0.2, 0.7, 0.1], ['Хіл', 0.1, 0.1, 0.8], ['Фріз/Контроль', 0.5, 0.3, 0.2],
+    ['МДД', 0.8, 0.1, 0.1], ['РДД', 0.8, 0.1, 0.1], ['Маг', 0.8, 0.1, 0.1]
+  ];
+
+  function emptyAllianceData() {
+    return { players: [], history: [], eventTypes: [], draftSession: null };
+  }
+
+  function emptyDb(nowISO) {
+    const alliance = { id: uuid(), name: 'Мій альянс', createdAt: nowISO };
+    return {
+      schemaVersion: 1,
+      activeAllianceId: alliance.id,
+      settings: defaultSettings(),
+      classes: CLASS_SEED.map(([name, wDmg, wTaken, wHeal]) =>
+        ({ id: uuid(), name, wDmg, wTaken, wHeal, isArchived: false })),
+      items: [],
+      alliances: [alliance],
+      perAlliance: { [alliance.id]: emptyAllianceData() }
+    };
+  }
+
+  function migrate(db) {
+    if (db.schemaVersion === 1) return { ok: true, db };
+    return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
+  }
+
+  function validateImport(raw) {
+    const fail = (error) => ({ ok: false, error });
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return fail('очікується JSON-об\'єкт бази');
+    }
+    if (typeof raw.schemaVersion !== 'number') return fail('відсутній schemaVersion');
+    if (!Array.isArray(raw.alliances) || raw.alliances.length === 0) {
+      return fail('список альянсів порожній або відсутній');
+    }
+    if (raw.alliances.some(a => !a || typeof a.id !== 'string' || typeof a.name !== 'string')) {
+      return fail('запис альянсу без id або name');
+    }
+    if (!raw.alliances.some(a => a.id === raw.activeAllianceId)) {
+      return fail('activeAllianceId не вказує на жоден альянс');
+    }
+    if (!raw.settings || typeof raw.settings !== 'object') return fail('відсутні settings');
+    if (!Array.isArray(raw.classes)) return fail('відсутній довідник класів');
+    if (!Array.isArray(raw.items)) return fail('відсутній каталог предметів');
+    if (!raw.perAlliance || typeof raw.perAlliance !== 'object') {
+      return fail('відсутній блок perAlliance');
+    }
+    for (const a of raw.alliances) {
+      const pa = raw.perAlliance[a.id];
+      if (!pa || !Array.isArray(pa.players) || !Array.isArray(pa.history) ||
+          !Array.isArray(pa.eventTypes)) {
+        return fail('немає даних perAlliance для альянсу «' + a.name + '»');
+      }
+    }
+    return migrate(raw);
+  }
+
+  return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport };
 })();
 </script>
 
