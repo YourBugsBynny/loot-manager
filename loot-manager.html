@@ -206,8 +206,83 @@ const LMCore = (() => {
     return { positions, scores };
   }
 
+  // ТЗ §6: «ТОП Вклад» — простий режим: прапорці; розширений: максимум балу
+  function topContributors(session, scores) {
+    if (session.mode === 'simple') {
+      return new Set(Object.keys(scores)
+        .filter(pid => session.presence[pid] && session.presence[pid].top));
+    }
+    const vals = Object.values(scores);
+    if (vals.length === 0) return new Set();
+    const max = Math.max(...vals);
+    return new Set(Object.keys(scores).filter(pid => scores[pid] === max));
+  }
+
+  // ТЗ §6: рядок на предмет; кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
+  function formatReport({ allianceName, eventTypeName, positions, itemsById,
+                          playersById, classesById, topSet }) {
+    const byItem = [];       // порядок першої появи предмета
+    const groups = new Map();
+    for (const pos of positions) {
+      if (!groups.has(pos.itemId)) { groups.set(pos.itemId, []); byItem.push(pos.itemId); }
+      groups.get(pos.itemId).push(pos);
+    }
+    const lines = [];
+    for (const itemId of byItem) {
+      const item = itemsById[itemId];
+      const posList = groups.get(itemId);
+      const entries = [];
+      let freeCount = 0;
+      for (const pos of posList) {
+        if (!pos.winnerId) { freeCount++; continue; }
+        const player = playersById[pos.winnerId];
+        const cls = player && classesById[player.classId];
+        const nick = player ? player.nickname : '?';
+        const clsName = cls ? cls.name : '?';
+        const topMark = topSet.has(pos.winnerId) ? ' | ТОП Вклад' : '';
+        entries.push('@' + nick + ' [' + clsName + topMark + ']');
+      }
+      if (freeCount > 0) entries.push('[Вільний залишок]');
+      lines.push('🔹 ' + (item ? item.name : '?') + ' (' + posList.length + ' шт.) — ' +
+        entries.join(', '));
+    }
+    return '📜 [АЛЬЯНС: ' + allianceName + '] РОЗПОДІЛ ЗДОБИЧІ (' + eventTypeName + ')\n\n' +
+      lines.join('\n') +
+      '\n\nДякуємо всім за участь! Предмети чекають у магазині альянсу.';
+  }
+
+  // ТЗ §5.8, §3.3: групування позицій у записи історії зі снапшотами
+  function buildRecords({ positions, itemsById, playersById, scores, nowISO, eventTypeName }) {
+    const grouped = new Map();   // "pid|itemId" → {quantity, rolled, manual}
+    for (const pos of positions) {
+      if (!pos.winnerId) continue;
+      const k = pos.winnerId + '|' + pos.itemId;
+      const g = grouped.get(k) || { playerId: pos.winnerId, itemId: pos.itemId,
+        quantity: 0, rolled: false, manual: false };
+      g.quantity += 1;
+      g.rolled = g.rolled || pos.rolled;
+      g.manual = g.manual || pos.manual;
+      grouped.set(k, g);
+    }
+    return [...grouped.values()].map(g => ({
+      id: uuid(),
+      timestamp: nowISO,
+      eventTypeName,
+      itemId: g.itemId,
+      itemNameSnapshot: itemsById[g.itemId] ? itemsById[g.itemId].name : '?',
+      playerId: g.playerId,
+      playerNicknameSnapshot: playersById[g.playerId] ? playersById[g.playerId].nickname : '?',
+      quantity: g.quantity,
+      scoreAtDistribution: scores[g.playerId] !== undefined ? scores[g.playerId] : 0,
+      rolled: g.rolled,
+      manual: g.manual,
+      cancelled: false
+    }));
+  }
+
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
-           computeScores, historyLoad, distribute };
+           computeScores, historyLoad, distribute, topContributors, formatReport,
+           buildRecords };
 })();
 </script>
 

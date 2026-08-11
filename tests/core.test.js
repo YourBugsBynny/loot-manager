@@ -237,5 +237,80 @@ test('distribute: override — ручний переможець поза пре
   assert.strictEqual(over.positions[1].priority, 100);
 });
 
+// ---- Task 5 ----
+test('topContributors: простий — прапорці, розширений — максимум балу', () => {
+  const simple = { mode: 'simple', presence: {
+    'p-a': { present: true, top: true }, 'p-b': { present: true, top: false } } };
+  assert.deepStrictEqual([...LMCore.topContributors(simple, { 'p-a': 100, 'p-b': 50 })], ['p-a']);
+  const adv = { mode: 'advanced', presence: {} };
+  assert.deepStrictEqual([...LMCore.topContributors(adv, { 'p-a': 80, 'p-b': 85 })], ['p-b']);
+  assert.deepStrictEqual([...LMCore.topContributors(adv, {})], []);
+});
+test('formatReport: побайтово збігається з прикладом ТЗ §6', () => {
+  const cls6 = [mkClass('c1', 'Танк', 0.2, 0.7, 0.1), mkClass('c2', 'Маг', 0.8, 0.1, 0.1),
+    mkClass('c3', 'МДД', 0.8, 0.1, 0.1), mkClass('c4', 'Хіл', 0.1, 0.1, 0.8),
+    mkClass('c5', 'РДД', 0.8, 0.1, 0.1)];
+  const classesById = Object.fromEntries(cls6.map(c => [c.id, c]));
+  const pl = [['n1', 'Нік1', 'c1'], ['n2', 'Нік2', 'c2'], ['n3', 'Нік3', 'c2'],
+    ['n4', 'Нік4', 'c3'], ['n5', 'Нік5', 'c4'], ['n6', 'Нік6', 'c5']]
+    .map(([id, nickname, classId]) => mkPlayer(id, nickname, classId));
+  const playersById = Object.fromEntries(pl.map(p => [p.id, p]));
+  const items6 = [mkItem('m', 'Меч Дракона', 'legendary'), mkItem('s', 'Посох Сили', 'epic'),
+    mkItem('k', 'Кольчуга Гвардійця', 'rare'), mkItem('r', 'Сундук Ресурсів', 'common')];
+  const itemsById = Object.fromEntries(items6.map(i => [i.id, i]));
+  const mkPos = (itemId, copyIndex, winnerId) => ({ key: itemId + '#' + copyIndex,
+    itemId, copyIndex, winnerId, priority: 0, rolled: false, manual: false,
+    classBonus: false, candidates: [] });
+  const positions = [
+    mkPos('m', 0, 'n1'), mkPos('s', 0, 'n2'), mkPos('s', 1, 'n3'),
+    mkPos('k', 0, 'n4'), mkPos('r', 0, 'n5'), mkPos('r', 1, 'n6'), mkPos('r', 2, null)
+  ];
+  const text = LMCore.formatReport({ allianceName: 'Alpha', eventTypeName: 'PvP-Івент',
+    positions, itemsById, playersById, classesById, topSet: new Set(['n1']) });
+  assert.strictEqual(text,
+    '📜 [АЛЬЯНС: Alpha] РОЗПОДІЛ ЗДОБИЧІ (PvP-Івент)\n' +
+    '\n' +
+    '🔹 Меч Дракона (1 шт.) — @Нік1 [Танк | ТОП Вклад]\n' +
+    '🔹 Посох Сили (2 шт.) — @Нік2 [Маг], @Нік3 [Маг]\n' +
+    '🔹 Кольчуга Гвардійця (1 шт.) — @Нік4 [МДД]\n' +
+    '🔹 Сундук Ресурсів (3 шт.) — @Нік5 [Хіл], @Нік6 [РДД], [Вільний залишок]\n' +
+    '\n' +
+    'Дякуємо всім за участь! Предмети чекають у магазині альянсу.');
+});
+test('formatReport: кілька вільних штук — одна позначка', () => {
+  const itemsById = { b: mkItem('b', 'Скриня', 'common') };
+  const mkPos2 = (ci, w) => ({ key: 'b#' + ci, itemId: 'b', copyIndex: ci, winnerId: w,
+    priority: w ? 0 : null, rolled: false, manual: false, classBonus: false, candidates: [] });
+  const text = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X',
+    positions: [mkPos2(0, 'p-a'), mkPos2(1, null), mkPos2(2, null)],
+    itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set() });
+  assert.strictEqual((text.match(/\[Вільний залишок\]/g) || []).length, 1);
+});
+test('buildRecords: групування пар гравець×предмет, снапшоти, пропуск залишку (крит. 11)', () => {
+  const mkPos3 = (itemId, ci, w, extra) => Object.assign({ key: itemId + '#' + ci, itemId,
+    copyIndex: ci, winnerId: w, priority: 0, rolled: false, manual: false,
+    classBonus: false, candidates: [] }, extra);
+  const positions = [
+    mkPos3('i-box', 0, 'p-a', { rolled: true }),
+    mkPos3('i-box', 1, 'p-a', { manual: true }),
+    mkPos3('i-box', 2, null),
+    mkPos3('i-sword', 0, 'p-b')
+  ];
+  const recs = LMCore.buildRecords({ positions, itemsById: ITBYID, playersById: PBYID,
+    scores: { 'p-a': 100, 'p-b': 50 }, nowISO: NOW, eventTypeName: 'Бос' });
+  assert.strictEqual(recs.length, 2);
+  const boxRec = recs.find(r => r.itemId === 'i-box');
+  assert.deepStrictEqual({
+    q: boxRec.quantity, r: boxRec.rolled, m: boxRec.manual, c: boxRec.cancelled,
+    nick: boxRec.playerNicknameSnapshot, item: boxRec.itemNameSnapshot,
+    sc: boxRec.scoreAtDistribution, t: boxRec.timestamp, ev: boxRec.eventTypeName
+  }, { q: 2, r: true, m: true, c: false, nick: 'Andriy', item: 'Скриня',
+       sc: 100, t: NOW, ev: 'Бос' });
+  assert.match(boxRec.id, /^[0-9a-f-]{36}$/i);
+  const swordRec = recs.find(r => r.itemId === 'i-sword');
+  assert.deepStrictEqual([swordRec.quantity, swordRec.rolled, swordRec.manual],
+    [1, false, false]);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
