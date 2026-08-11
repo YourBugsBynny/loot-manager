@@ -75,13 +75,13 @@ LMCore.buildRecords(args) -> LootRecord[]                  // ТЗ §5.8, §3.3
 
 **Interfaces:** Produces: механізм екстракції `<script id="core">` у Node `vm`; глобал `LMCore` з `DEFAULTS`.
 
-- [ ] **Step 1: git init**
+- [x] **Step 1: git init**
 
 ```bash
 cd G:/AI_and_Models/Claude/WhoaBackup/loot-manager && git init -b main
 ```
 
-- [ ] **Step 2: Написати падаючий тест** — `tests/core.test.js`:
+- [x] **Step 2: Написати падаючий тест** — `tests/core.test.js`:
 
 ```js
 'use strict';
@@ -123,9 +123,9 @@ console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
 ```
 
-- [ ] **Step 3: Запустити — переконатися, що падає** (`node tests/core.test.js`; очікується: FAIL — файл html відсутній).
+- [x] **Step 3: Запустити — переконатися, що падає** (`node tests/core.test.js`; очікується: FAIL — файл html відсутній).
 
-- [ ] **Step 4: Мінімальна реалізація** — `loot-manager.html`: скелет `<!DOCTYPE html>…`, `<meta charset>`, `<meta name="viewport" content="width=device-width, initial-scale=1">`, `<title>Loot Manager</title>`, порожні `<style>`, `<body>` з заглушкою, і:
+- [x] **Step 4: Мінімальна реалізація** — `loot-manager.html`: скелет `<!DOCTYPE html>…`, `<meta charset>`, `<meta name="viewport" content="width=device-width, initial-scale=1">`, `<title>Loot Manager</title>`, порожні `<style>`, `<body>` з заглушкою, і:
 
 ```html
 <script id="core">
@@ -155,8 +155,8 @@ const LMCore = (() => {
 
 (`deepStrictEqual` порівнює і заморожений вкладений `rarityWeights` — ок.)
 
-- [ ] **Step 5: Тести зелені** (`node tests/core.test.js` → `2 passed, 0 failed`).
-- [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: scaffold single-file app + node test harness"`.
+- [x] **Step 5: Тести зелені** (`node tests/core.test.js` → `2 passed, 0 failed`).
+- [x] **Step 6: Commit** — `git add -A && git commit -m "feat: scaffold single-file app + node test harness"`.
 
 ---
 
@@ -166,7 +166,7 @@ const LMCore = (() => {
 
 **Interfaces:** Consumes: `DEFAULTS`, `uuid`. Produces: `emptyDb(nowISO)`, `migrate(db)`, `validateImport(raw)`.
 
-- [ ] **Step 1: Падаючі тести** — додати до `core.test.js` перед фінальним підсумком:
+- [x] **Step 1: Падаючі тести** — додати до `core.test.js` перед фінальним підсумком:
 
 ```js
 // ---- Task 2 ----
@@ -212,10 +212,10 @@ test('validateImport: відхиляє сміття, приймає валідн
 });
 ```
 
-- [ ] **Step 2: Запуск — FAIL** (`emptyDb is not a function`).
-- [ ] **Step 3: Реалізація в `#core`** — `emptyDb(nowISO)` будує об'єкт рівно за схемою ТЗ §2.1 (сід класів §3.4, налаштування — глибока копія DEFAULTS); `migrate(db)`: `db.schemaVersion === 1 ? {ok:true, db} : {ok:false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion}`; `validateImport(raw)`: перевірки — об'єкт; `schemaVersion` число; `alliances` непорожній масив об'єктів з `id`/`name`; `activeAllianceId` є серед альянсів; `settings` об'єкт; `classes`/`items` масиви; `perAlliance` об'єкт, для КОЖНОГО альянсу є запис із масивами `players/history/eventTypes`; далі `migrate`. Повертає `{ok:false, error:<людською мовою що саме не так>}` при першій проблемі. Експортувати нові функції в `return {...}`.
-- [ ] **Step 4: Тести зелені** (5 passed).
-- [ ] **Step 5: Commit** — `feat(core): db bootstrap, migrate, import validation`.
+- [x] **Step 2: Запуск — FAIL** (`emptyDb is not a function`).
+- [x] **Step 3: Реалізація в `#core`** — `emptyDb(nowISO)` будує об'єкт рівно за схемою ТЗ §2.1 (сід класів §3.4, налаштування — глибока копія DEFAULTS); `migrate(db)`: `db.schemaVersion === 1 ? {ok:true, db} : {ok:false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion}`; `validateImport(raw)`: перевірки — об'єкт; `schemaVersion` число; `alliances` непорожній масив об'єктів з `id`/`name`; `activeAllianceId` є серед альянсів; `settings` об'єкт; `classes`/`items` масиви; `perAlliance` об'єкт, для КОЖНОГО альянсу є запис із масивами `players/history/eventTypes`; далі `migrate`. Повертає `{ok:false, error:<людською мовою що саме не так>}` при першій проблемі. Експортувати нові функції в `return {...}`.
+- [x] **Step 4: Тести зелені** (5 passed).
+- [x] **Step 5: Commit** — `feat(core): db bootstrap, migrate, import validation`.
 
 ---
 
@@ -225,7 +225,7 @@ test('validateImport: відхиляє сміття, приймає валідн
 
 **Interfaces:** Consumes: `DEFAULTS`. Produces: `computeScores(session, playersById, classesById, settings)` → `{pid: Number}` лише для присутніх.
 
-- [ ] **Step 1: Падаючі тести** (фікстури-хелпери додати над блоком):
+- [x] **Step 1: Падаючі тести** (фікстури-хелпери додати над блоком):
 
 ```js
 // ---- Task 3 ----
@@ -280,10 +280,10 @@ test('computeScores: нульові максимуми не дають NaN (ТЗ
 });
 ```
 
-- [ ] **Step 2: Запуск — FAIL.**
-- [ ] **Step 3: Реалізація** — за ТЗ §5.2; відсутні (`!presence[pid]?.present`) не входять у результат і в максимуми; метрики `Number(...) || 0`.
-- [ ] **Step 4: Тести зелені.**
-- [ ] **Step 5: Commit** — `feat(core): contribution score for simple and advanced modes`.
+- [x] **Step 2: Запуск — FAIL.**
+- [x] **Step 3: Реалізація** — за ТЗ §5.2; відсутні (`!presence[pid]?.present`) не входять у результат і в максимуми; метрики `Number(...) || 0`.
+- [x] **Step 4: Тести зелені.**
+- [x] **Step 5: Commit** — `feat(core): contribution score for simple and advanced modes`.
 
 ---
 
@@ -293,7 +293,7 @@ test('computeScores: нульові максимуми не дають NaN (ТЗ
 
 **Interfaces:** Consumes: `computeScores`, `RARITY_RANK`. Produces: `historyLoad(...)`, `distribute(ctx)` (семантика — Global Interfaces п.1–6).
 
-- [ ] **Step 1: Падаючі тести:**
+- [x] **Step 1: Падаючі тести:**
 
 ```js
 // ---- Task 4 ----
@@ -409,10 +409,10 @@ test('distribute: override — ручний переможець поза пре
 
   ⚠️ Останній assert: скриня `targetClasses: []` → бонусу нема; очікуваний priority `p-a` = 100. Виправити рядок на `assert.strictEqual(over.positions[1].priority, 100);` (коментар у тесті прибрати).
 
-- [ ] **Step 2: Запуск — FAIL.**
-- [ ] **Step 3: Реалізація `historyLoad` і `distribute`** строго за Global Interfaces (кеш `historyLoad` через `Map`; `priority` переможця пишеться в позицію; для manual-переможця поза претендентами `priority:null`).
-- [ ] **Step 4: Тести зелені.**
-- [ ] **Step 5: Commit** — `feat(core): priority queue distribution with history, ties, overrides`.
+- [x] **Step 2: Запуск — FAIL.**
+- [x] **Step 3: Реалізація `historyLoad` і `distribute`** строго за Global Interfaces (кеш `historyLoad` через `Map`; `priority` переможця пишеться в позицію; для manual-переможця поза претендентами `priority:null`).
+- [x] **Step 4: Тести зелені.**
+- [x] **Step 5: Commit** — `feat(core): priority queue distribution with history, ties, overrides`.
 
 ---
 
@@ -422,7 +422,7 @@ test('distribute: override — ручний переможець поза пре
 
 **Interfaces:** Consumes: усе з задач 2–4. Produces: `topContributors`, `formatReport`, `buildRecords`.
 
-- [ ] **Step 1: Падаючі тести** (включно з побайтовим прикладом ТЗ §6):
+- [x] **Step 1: Падаючі тести** (включно з побайтовим прикладом ТЗ §6):
 
 ```js
 // ---- Task 5 ----
@@ -506,10 +506,10 @@ test('buildRecords: групування пар гравець×предмет, 
 });
 ```
 
-- [ ] **Step 2: Запуск — FAIL.**
-- [ ] **Step 3: Реалізація** — `formatReport`: групування позицій за `itemId` у порядку першої появи; сума штук = кількість позицій предмета; записи переможців у порядку копій; `rolled`-позначку в текст НЕ виводити (🎲 — лише в UI-списку, ТЗ §4.4/§6); `buildRecords`: агрегація `rolled`/`manual` через OR.
-- [ ] **Step 4: Тести зелені** (весь файл: 14 passed).
-- [ ] **Step 5: Commit** — `feat(core): report formatting and history records`.
+- [x] **Step 2: Запуск — FAIL.**
+- [x] **Step 3: Реалізація** — `formatReport`: групування позицій за `itemId` у порядку першої появи; сума штук = кількість позицій предмета; записи переможців у порядку копій; `rolled`-позначку в текст НЕ виводити (🎲 — лише в UI-списку, ТЗ §4.4/§6); `buildRecords`: агрегація `rolled`/`manual` через OR.
+- [x] **Step 4: Тести зелені** (весь файл: 14 passed).
+- [x] **Step 5: Commit** — `feat(core): report formatting and history records`.
 
 ---
 
@@ -519,8 +519,8 @@ test('buildRecords: групування пар гравець×предмет, 
 
 **Interfaces:** Consumes: `LMCore.emptyDb/migrate/uuid`. Produces (для задач 7–10): глобальний стан `let db` та `let ui = {activeTab, calcResult:null}`; функції `save()`, `activeAlliance()`, `pa()` (дані активного альянсу), `draft()` (ледаче створення `draftSession` за §3.7), `banner(msg)`, `switchTab(n)`, `renderAll()` (диспетчер `renderTab1..4()` — заглушки), `escapeHtml(s)`; розмітка: `#banner`, `header` з `#allianceSelect` і `#btnSettings`, `<nav>` з `button.tab[data-tab="1..4"]`, панелі `#tab1..#tab4`.
 
-- [ ] **Step 1: Розмітка + CSS.** Мінімальна система: змінні кольорів; `body{font-family:system-ui}`; липка шапка; вкладки — горизонтальний скрол на вузьких екранах; класи `.card`, `.btn`, `.btn-primary`, `.btn-danger`, `.row`; таблиці з `overflow-x:auto`; `@media (max-width:699px)` — карткова верстка для матриці заявок (задача 8) і таблиць. Жодних зовнішніх ресурсів.
-- [ ] **Step 2: Сховище в `#app`:**
+- [x] **Step 1: Розмітка + CSS.** Мінімальна система: змінні кольорів; `body{font-family:system-ui}`; липка шапка; вкладки — горизонтальний скрол на вузьких екранах; класи `.card`, `.btn`, `.btn-primary`, `.btn-danger`, `.row`; таблиці з `overflow-x:auto`; `@media (max-width:699px)` — карткова верстка для матриці заявок (задача 8) і таблиць. Жодних зовнішніх ресурсів.
+- [x] **Step 2: Сховище в `#app`:**
 
 ```js
 const STORAGE_KEY = 'lootManagerData';
@@ -545,10 +545,10 @@ function save() {
 ```
 
   (Пошкоджена база: старий raw НЕ перетирається до першого `save()` — а `save()` викликається лише мутаціями користувача; цього досить за §7.11.)
-- [ ] **Step 3: Шапка** — `#allianceSelect` (options з `db.alliances`, value=`activeAllianceId`; `change` → `db.activeAllianceId = value; save(); renderAll()`); `#btnSettings` → `switchTab(4)`. Вкладки: `switchTab(n)` перемикає `hidden` панелей і `.active` кнопок, `ui.activeTab = n`, рендерить панель.
-- [ ] **Step 4: Ініціалізація** — `let db = load(); save();` + `renderAll()` на `DOMContentLoaded`. `banner(msg)` показує `#banner` з кнопкою «×».
-- [ ] **Step 5: Верифікація в браузері (Browser pane):** відкрити `file:///G:/AI_and_Models/Claude/WhoaBackup/loot-manager/loot-manager.html` (fallback: `python -m http.server` через launch.json). Перевірити: консоль без помилок; мережа — нуль запитів; у шапці «Мій альянс»; чотири вкладки перемикаються; `localStorage.lootManagerData` створено з `schemaVersion:1`; ⚙️ відкриває вкладку 4 (порожню). Мобільний прескан: resize 375 — без горизонтального скролу сторінки.
-- [ ] **Step 6: Commit** — `feat(ui): app shell, storage, alliance switcher, tabs`.
+- [x] **Step 3: Шапка** — `#allianceSelect` (options з `db.alliances`, value=`activeAllianceId`; `change` → `db.activeAllianceId = value; save(); renderAll()`); `#btnSettings` → `switchTab(4)`. Вкладки: `switchTab(n)` перемикає `hidden` панелей і `.active` кнопок, `ui.activeTab = n`, рендерить панель.
+- [x] **Step 4: Ініціалізація** — `let db = load(); save();` + `renderAll()` на `DOMContentLoaded`. `banner(msg)` показує `#banner` з кнопкою «×».
+- [x] **Step 5: Верифікація в браузері (Browser pane):** відкрити `file:///G:/AI_and_Models/Claude/WhoaBackup/loot-manager/loot-manager.html` (fallback: `python -m http.server` через launch.json). Перевірити: консоль без помилок; мережа — нуль запитів; у шапці «Мій альянс»; чотири вкладки перемикаються; `localStorage.lootManagerData` створено з `schemaVersion:1`; ⚙️ відкриває вкладку 4 (порожню). Мобільний прескан: resize 375 — без горизонтального скролу сторінки.
+- [x] **Step 6: Commit** — `feat(ui): app shell, storage, alliance switcher, tabs`.
 
 ---
 
@@ -558,10 +558,10 @@ function save() {
 
 **Interfaces:** Consumes: `draft()`, `save()`, `pa()`. Produces: `renderTab1()`; чернетка `presence`/`mode`/`eventTypeName` наповнюється згідно §3.7; `commitEventType()` НЕ тут — довідник поповнюється при підтвердженні (задача 9).
 
-- [ ] **Step 1: Розмітка/рендер** — `#eventTypeInput` (`<input list="eventTypeList">` + `<datalist id="eventTypeList">` з `pa().eventTypes`); радіо `#modeSimple`/`#modeAdvanced`; `#btnAllPresent`/`#btnNonePresent`; `#rosterList`: рядок на кожного `isActive` гравця (`data-pid`): чекбокс `.chkPresent`, тогл `.chkTop` (простий режим) або три `<input type="number" min="0">` `.inpDmg/.inpTaken/.inpHeal` (розширений; `disabled` для неприсутніх). Порожній стан: «Додайте гравців на вкладці 4».
-- [ ] **Step 2: Обробники** — кожна зміна пише у `draft()` і `save()`; перемикання режиму перерендерює список (дані обох режимів зберігаються в `presence` — перемикання не стирає числа).
-- [ ] **Step 3: Верифікація в браузері:** створити тимчасово 2–3 гравців через консоль заборонено — натомість зайти на вкладку 4? Вона ще порожня, тому: тимчасово через `#app`-код? Ні. Порядок: цей крок виконати ПІСЛЯ задачі 10 не можна. Рішення: у задачі 7 верифікувати з порожнім ростером (порожній стан) + перевірити збереження `eventTypeName`/`mode` через reload; повний прогін ростера — у задачі 11 (після CRUD задачі 10). Зафіксувати в нотатках задачі 11.
-- [ ] **Step 4: Commit** — `feat(ui): tab1 event and contribution input`.
+- [x] **Step 1: Розмітка/рендер** — `#eventTypeInput` (`<input list="eventTypeList">` + `<datalist id="eventTypeList">` з `pa().eventTypes`); радіо `#modeSimple`/`#modeAdvanced`; `#btnAllPresent`/`#btnNonePresent`; `#rosterList`: рядок на кожного `isActive` гравця (`data-pid`): чекбокс `.chkPresent`, тогл `.chkTop` (простий режим) або три `<input type="number" min="0">` `.inpDmg/.inpTaken/.inpHeal` (розширений; `disabled` для неприсутніх). Порожній стан: «Додайте гравців на вкладці 4».
+- [x] **Step 2: Обробники** — кожна зміна пише у `draft()` і `save()`; перемикання режиму перерендерює список (дані обох режимів зберігаються в `presence` — перемикання не стирає числа).
+- [x] **Step 3: Верифікація в браузері:** створити тимчасово 2–3 гравців через консоль заборонено — натомість зайти на вкладку 4? Вона ще порожня, тому: тимчасово через `#app`-код? Ні. Порядок: цей крок виконати ПІСЛЯ задачі 10 не можна. Рішення: у задачі 7 верифікувати з порожнім ростером (порожній стан) + перевірити збереження `eventTypeName`/`mode` через reload; повний прогін ростера — у задачі 11 (після CRUD задачі 10). Зафіксувати в нотатках задачі 11.
+- [x] **Step 4: Commit** — `feat(ui): tab1 event and contribution input`.
 
 ---
 
@@ -571,10 +571,10 @@ function save() {
 
 **Interfaces:** Consumes: `draft()`, `db.items`, `save()`. Produces: `renderTab2()`; `draft().drops` (унікальні itemId — повторне додавання сумує кількість), `draft().claims`.
 
-- [ ] **Step 1: Блок «Що випало»** — `#itemSearch` (`<input list>` по назвах неархівних предметів), `#inpQty` (number, min 1, дефолт 1), `#btnAddDrop`. Якщо введена назва не знайдена в каталозі — розгорнути інлайн-форму `#quickItemForm`: `#qiName` (префіл), `#qiCategory` (select: Зброя/Броня/Біжутерія/Ресурси/Інше), `#qiRarity` (select: Звичайний…Легендарний → common…legendary), `#qiClasses` (мультичекбокси неархівних класів; жодного = для всіх), кнопка «Створити і додати» → `db.items.push({id:LMCore.uuid(), name, category, targetClasses, rarity, isArchived:false})`, у дроп. `#dropList`: рядки з назвою, рідкістю (кольоровий бейдж), кількістю (редагована), кнопка «✕» (прибирає з дропу і чистить claims цього предмета).
-- [ ] **Step 2: Матриця заявок** — `#claimsMatrix`: ≥700px — таблиця (рядки: присутні гравці; стовпці: предмети дропу; чекбокси `data-pid data-iid`); <700px — картка на гравця зі списком чекбоксів. Порожні стани: «Немає присутніх (вкладка 1)» / «Додайте здобич».
-- [ ] **Step 3: Верифікація в браузері:** створити предмет через quick-create (перевірити появу в `db.items` через export пізніше — на око: повторний пошук знаходить); додати той самий предмет двічі → кількість сумується, рядок один; зняти предмет → чекбокси заявок зникають; reload зберігає все.
-- [ ] **Step 4: Commit** — `feat(ui): tab2 drops and claims`.
+- [x] **Step 1: Блок «Що випало»** — `#itemSearch` (`<input list>` по назвах неархівних предметів), `#inpQty` (number, min 1, дефолт 1), `#btnAddDrop`. Якщо введена назва не знайдена в каталозі — розгорнути інлайн-форму `#quickItemForm`: `#qiName` (префіл), `#qiCategory` (select: Зброя/Броня/Біжутерія/Ресурси/Інше), `#qiRarity` (select: Звичайний…Легендарний → common…legendary), `#qiClasses` (мультичекбокси неархівних класів; жодного = для всіх), кнопка «Створити і додати» → `db.items.push({id:LMCore.uuid(), name, category, targetClasses, rarity, isArchived:false})`, у дроп. `#dropList`: рядки з назвою, рідкістю (кольоровий бейдж), кількістю (редагована), кнопка «✕» (прибирає з дропу і чистить claims цього предмета).
+- [x] **Step 2: Матриця заявок** — `#claimsMatrix`: ≥700px — таблиця (рядки: присутні гравці; стовпці: предмети дропу; чекбокси `data-pid data-iid`); <700px — картка на гравця зі списком чекбоксів. Порожні стани: «Немає присутніх (вкладка 1)» / «Додайте здобич».
+- [x] **Step 3: Верифікація в браузері:** створити предмет через quick-create (перевірити появу в `db.items` через export пізніше — на око: повторний пошук знаходить); додати той самий предмет двічі → кількість сумується, рядок один; зняти предмет → чекбокси заявок зникають; reload зберігає все.
+- [x] **Step 4: Commit** — `feat(ui): tab2 drops and claims`.
 
 ---
 
@@ -584,7 +584,7 @@ function save() {
 
 **Interfaces:** Consumes: `LMCore.distribute/topContributors/formatReport/buildRecords`, `draft()`. Produces: `renderTab3()`; `ui.calcResult = {positions, scores}`; `draft().overrides` (`{key: playerId}`) і `draft().rollMemo` — зберігаються в чернетці (розширення §3.7 полем `result` — тут: `overrides`+`rollMemo`, бо `positions` детерміновано відновлюються).
 
-- [ ] **Step 1: Розрахунок** — `#btnCalc` → якщо немає присутніх або дропу: banner з поясненням; інакше `runCalc()`:
+- [x] **Step 1: Розрахунок** — `#btnCalc` → якщо немає присутніх або дропу: banner з поясненням; інакше `runCalc()`:
 
 ```js
 function runCalc() {
@@ -598,8 +598,8 @@ function runCalc() {
 }
 ```
 
-- [ ] **Step 2: Список позицій** — рядок: назва предмета + №штуки, переможець (або «Вільний залишок»), `priority` (1 знак після коми), бейджі `[клас-бонус]` `[🎲 рол]` `[ручне]`; `<select class="winnerSelect" data-key>`: options = кандидати «Нік (пріоритет)» + optgroup «Інший присутній гравець» (решта присутніх) + опція «— авто —» (знімає override). `change` → `d.overrides[key] = value or delete`; `runCalc()` (перерахунок нижчих позицій — автоматично, бо `distribute` детермінований + rollMemo).
-- [ ] **Step 3: Текст і кнопки** — `#reportText` (readonly textarea) = `formatReport(...)` з `topContributors`; `#btnCopy`:
+- [x] **Step 2: Список позицій** — рядок: назва предмета + №штуки, переможець (або «Вільний залишок»), `priority` (1 знак після коми), бейджі `[клас-бонус]` `[🎲 рол]` `[ручне]`; `<select class="winnerSelect" data-key>`: options = кандидати «Нік (пріоритет)» + optgroup «Інший присутній гравець» (решта присутніх) + опція «— авто —» (знімає override). `change` → `d.overrides[key] = value or delete`; `runCalc()` (перерахунок нижчих позицій — автоматично, бо `distribute` детермінований + rollMemo).
+- [x] **Step 3: Текст і кнопки** — `#reportText` (readonly textarea) = `formatReport(...)` з `topContributors`; `#btnCopy`:
 
 ```js
 async function copyReport() {
@@ -617,8 +617,8 @@ const notificationService = { // Етап 2: DiscordWebhookService (POST webhook
 };
 ```
 
-- [ ] **Step 4: Верифікація в браузері** (можлива лише частково до задачі 10 — без гравців; повний прогін у задачі 11): кнопки рендеряться, порожні стани коректні.
-- [ ] **Step 5: Commit** — `feat(ui): tab3 distribution, manual overrides, report, confirm`.
+- [x] **Step 4: Верифікація в браузері** (можлива лише частково до задачі 10 — без гравців; повний прогін у задачі 11): кнопки рендеряться, порожні стани коректні.
+- [x] **Step 5: Commit** — `feat(ui): tab3 distribution, manual overrides, report, confirm`.
 
 ---
 
@@ -628,14 +628,14 @@ const notificationService = { // Етап 2: DiscordWebhookService (POST webhook
 
 **Interfaces:** Consumes: усе попереднє. Produces: `renderTab4()` — секції-акордеони: Альянси, Гравці, Предмети, Класи, Типи івентів, Історія, Налаштування, Резервна копія.
 
-- [ ] **Step 1: Альянси** — список + «Додати» (prompt назви; `perAlliance[id]` ініціалізується порожнім), «Перейменувати», «Видалити» (`confirm` з текстом про повне знищення даних; заборонено видаляти останній — banner).
-- [ ] **Step 2: Гравці** — таблиця (нік, клас-select, роль-select, статус); «Додати гравця» (нік унікальний case-insensitive у межах альянсу — інакше banner); «Деактивувати/Активувати»; «Видалити» — лише якщо `history.every(r => r.playerId !== id)`, інакше banner «лише деактивація» (§3.1).
-- [ ] **Step 3: Предмети** — пошук-фільтр, таблиця (назва, категорія, рідкість, цільові класи, архів); додавання/редагування формою як quick-create; «Видалити» — якщо предмет у жодній історії жодного альянсу; інакше — «Архівувати» (§3.2).
-- [ ] **Step 4: Класи** — таблиця з інлайн-редагуванням назви і ваг (number step 0.05, 0..1); «Видалити» — заборонено, якщо є гравці з `classId` у будь-якому альянсі → «Архівувати» (§3.4).
-- [ ] **Step 5: Типи івентів** — список рядків з «✕».
-- [ ] **Step 6: Історія** — фільтри `#histPlayerFilter` (select гравців), `#histFrom/#histTo` (date); список новіші згори: дата, івент, предмет×кількість, нік, бал, бейджі 🎲/ручне; скасовані — закреслені; кнопка «Скасувати» (`confirm`) → `cancelled = true` (§7.7).
-- [ ] **Step 7: Налаштування** — форма ключів §3.6 (число-інпути; rarityWeights — 4 поля) + «Скинути до дефолтів» (`confirm`; глибока копія `LMCore.DEFAULTS`). `webhookUrl` НЕ показувати (§3.6).
-- [ ] **Step 8: Експорт/імпорт:**
+- [x] **Step 1: Альянси** — список + «Додати» (prompt назви; `perAlliance[id]` ініціалізується порожнім), «Перейменувати», «Видалити» (`confirm` з текстом про повне знищення даних; заборонено видаляти останній — banner).
+- [x] **Step 2: Гравці** — таблиця (нік, клас-select, роль-select, статус); «Додати гравця» (нік унікальний case-insensitive у межах альянсу — інакше banner); «Деактивувати/Активувати»; «Видалити» — лише якщо `history.every(r => r.playerId !== id)`, інакше banner «лише деактивація» (§3.1).
+- [x] **Step 3: Предмети** — пошук-фільтр, таблиця (назва, категорія, рідкість, цільові класи, архів); додавання/редагування формою як quick-create; «Видалити» — якщо предмет у жодній історії жодного альянсу; інакше — «Архівувати» (§3.2).
+- [x] **Step 4: Класи** — таблиця з інлайн-редагуванням назви і ваг (number step 0.05, 0..1); «Видалити» — заборонено, якщо є гравці з `classId` у будь-якому альянсі → «Архівувати» (§3.4).
+- [x] **Step 5: Типи івентів** — список рядків з «✕».
+- [x] **Step 6: Історія** — фільтри `#histPlayerFilter` (select гравців), `#histFrom/#histTo` (date); список новіші згори: дата, івент, предмет×кількість, нік, бал, бейджі 🎲/ручне; скасовані — закреслені; кнопка «Скасувати» (`confirm`) → `cancelled = true` (§7.7).
+- [x] **Step 7: Налаштування** — форма ключів §3.6 (число-інпути; rarityWeights — 4 поля) + «Скинути до дефолтів» (`confirm`; глибока копія `LMCore.DEFAULTS`). `webhookUrl` НЕ показувати (§3.6).
+- [x] **Step 8: Експорт/імпорт:**
 
 ```js
 function exportJson() {
@@ -660,8 +660,8 @@ function importJson(file) {
 }
 ```
 
-- [ ] **Step 9: Верифікація в браузері:** повний CRUD-прохід кожної секції; експорт скачує файл; імпорт битого файлу → банер, база ціла.
-- [ ] **Step 10: Commit** — `feat(ui): tab4 database management, settings, backup`.
+- [x] **Step 9: Верифікація в браузері:** повний CRUD-прохід кожної секції; експорт скачує файл; імпорт битого файлу → банер, база ціла.
+- [x] **Step 10: Commit** — `feat(ui): tab4 database management, settings, backup`.
 
 ---
 
@@ -669,14 +669,14 @@ function importJson(file) {
 
 **Files:** Modify: `loot-manager.html` (виправлення знахідок).
 
-- [ ] **Step 1: Node-тести** — `node tests/core.test.js` → усе зелене (регресія).
-- [ ] **Step 2: Повний сценарій у браузері (desktop 1280):** створити 3 гравців (Танк/Хіл/МДД) → івент «Вторгнення монстрів», простий режим, ТОП у танка → дроп: меч (targetClasses=[Танк], legendary) + 2 скрині (без класів) → заявки всіх на все → розрахунок: перевірити критерії 3 (ТОП), 4 (клас-бонус), 7 (wWon), 8 (🎲 при рівності) → ручна заміна переможця (крит. 9) → копіювання тексту → формат (крит. 10) → підтвердити → історія з снапшотами, чернетка чиста, повторне підтвердження неможливе (крит. 11).
-- [ ] **Step 3: Анти-жадібність (крит. 5, 6):** другий розрахунок тим самим складом — учорашній переможець легендарки програє; скасувати запис в історії → третій розрахунок повертає йому пріоритет.
-- [ ] **Step 4: Ізоляція альянсів (крит. 13):** другий альянс — порожні гравці/історія/івенти, спільні предмети/класи; чернетки незалежні (крит. 14 + §7.10: reload посеред сеансу).
-- [ ] **Step 5: Експорт → повне очищення localStorage через DevTools → імпорт → база ідентична (крит. 12).**
-- [ ] **Step 6: Мобільний прогін (resize 375×812):** весь сценарій кроку 2; без горизонтального скролу сторінки; матриця заявок — картки (крит. 2).
-- [ ] **Step 7: Гігієна (крит. 1):** консоль — нуль помилок; мережа — нуль запитів; файл відкрито з `file://`.
-- [ ] **Step 8: Фінальний commit** — `chore: acceptance pass fixes` + тег `v1.0.0`.
+- [x] **Step 1: Node-тести** — `node tests/core.test.js` → усе зелене (регресія).
+- [x] **Step 2: Повний сценарій у браузері (desktop 1280):** створити 3 гравців (Танк/Хіл/МДД) → івент «Вторгнення монстрів», простий режим, ТОП у танка → дроп: меч (targetClasses=[Танк], legendary) + 2 скрині (без класів) → заявки всіх на все → розрахунок: перевірити критерії 3 (ТОП), 4 (клас-бонус), 7 (wWon), 8 (🎲 при рівності) → ручна заміна переможця (крит. 9) → копіювання тексту → формат (крит. 10) → підтвердити → історія з снапшотами, чернетка чиста, повторне підтвердження неможливе (крит. 11).
+- [x] **Step 3: Анти-жадібність (крит. 5, 6):** другий розрахунок тим самим складом — учорашній переможець легендарки програє; скасувати запис в історії → третій розрахунок повертає йому пріоритет.
+- [x] **Step 4: Ізоляція альянсів (крит. 13):** другий альянс — порожні гравці/історія/івенти, спільні предмети/класи; чернетки незалежні (крит. 14 + §7.10: reload посеред сеансу).
+- [x] **Step 5: Експорт → повне очищення localStorage через DevTools → імпорт → база ідентична (крит. 12).**
+- [x] **Step 6: Мобільний прогін (resize 375×812):** весь сценарій кроку 2; без горизонтального скролу сторінки; матриця заявок — картки (крит. 2).
+- [x] **Step 7: Гігієна (крит. 1):** консоль — нуль помилок; мережа — нуль запитів; файл відкрито з `file://`.
+- [x] **Step 8: Фінальний commit** — `chore: acceptance pass fixes` + тег `v1.0.0`.
 
 ---
 
