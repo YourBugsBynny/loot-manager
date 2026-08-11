@@ -90,7 +90,38 @@ const LMCore = (() => {
     return migrate(raw);
   }
 
-  return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport };
+  // ТЗ §5.2: бал вкладу 0–100 лише для присутніх гравців
+  function computeScores(session, playersById, classesById, settings) {
+    const scores = {};
+    const present = Object.keys(session.presence || {})
+      .filter(pid => session.presence[pid] && session.presence[pid].present && playersById[pid]);
+    if (session.mode === 'simple') {
+      for (const pid of present) {
+        scores[pid] = session.presence[pid].top ? settings.scoreTop : settings.scorePresent;
+      }
+      return scores;
+    }
+    const num = v => Number(v) || 0;
+    let maxD = 0, maxT = 0, maxH = 0;
+    for (const pid of present) {
+      const p = session.presence[pid];
+      maxD = Math.max(maxD, num(p.damage));
+      maxT = Math.max(maxT, num(p.taken));
+      maxH = Math.max(maxH, num(p.heal));
+    }
+    for (const pid of present) {
+      const p = session.presence[pid];
+      const cls = classesById[playersById[pid].classId] || { wDmg: 0, wTaken: 0, wHeal: 0 };
+      const nD = maxD > 0 ? num(p.damage) / maxD : 0;
+      const nT = maxT > 0 ? num(p.taken) / maxT : 0;
+      const nH = maxH > 0 ? num(p.heal) / maxH : 0;
+      scores[pid] = 100 * (cls.wDmg * nD + cls.wTaken * nT + cls.wHeal * nH);
+    }
+    return scores;
+  }
+
+  return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
+           computeScores };
 })();
 </script>
 

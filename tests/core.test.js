@@ -75,5 +75,56 @@ test('validateImport: відхиляє сміття, приймає валідн
   assert.ok(good.db);
 });
 
+// ---- Task 3 ----
+function mkClass(id, name, wDmg, wTaken, wHeal) {
+  return { id, name, wDmg, wTaken, wHeal, isArchived: false };
+}
+const CLS = {
+  tank: mkClass('c-tank', 'Танк', 0.2, 0.7, 0.1),
+  heal: mkClass('c-heal', 'Хіл', 0.1, 0.1, 0.8),
+  mdd:  mkClass('c-mdd', 'МДД', 0.8, 0.1, 0.1)
+};
+const CLSBYID = Object.fromEntries(Object.values(CLS).map(c => [c.id, c]));
+function mkPlayer(id, nickname, classId) {
+  return { id, nickname, classId, role: 'Учасник', isActive: true, createdAt: NOW };
+}
+const P = {
+  a: mkPlayer('p-a', 'Andriy', 'c-tank'),
+  b: mkPlayer('p-b', 'Bohdan', 'c-heal'),
+  c: mkPlayer('p-c', 'Chip', 'c-mdd')
+};
+const PBYID = { 'p-a': P.a, 'p-b': P.b, 'p-c': P.c };
+const S = LMCore.DEFAULTS;
+
+test('computeScores: простий режим — ТОП/присутній/відсутній', () => {
+  const session = { mode: 'simple', presence: {
+    'p-a': { present: true, top: true },
+    'p-b': { present: true, top: false },
+    'p-c': { present: false, top: true }   // відсутній ігнорується попри top
+  }, drops: [], claims: {} };
+  const sc = LMCore.computeScores(session, PBYID, CLSBYID, S);
+  assert.deepStrictEqual(sc, { 'p-a': 100, 'p-b': 50 });
+});
+test('computeScores: розширений — нормалізація і ваги класу', () => {
+  const session = { mode: 'advanced', presence: {
+    'p-a': { present: true, damage: 50, taken: 200, heal: 0 },
+    'p-b': { present: true, damage: 0, taken: 100, heal: 300 },
+    'p-c': { present: true, damage: 100, taken: 0, heal: 0 }
+  }, drops: [], claims: {} };
+  const sc = LMCore.computeScores(session, PBYID, CLSBYID, S);
+  // maxD=100, maxT=200, maxH=300
+  assert.strictEqual(sc['p-a'], 100 * (0.2 * 0.5 + 0.7 * 1 + 0.1 * 0));   // 80
+  assert.strictEqual(sc['p-b'], 100 * (0.1 * 0 + 0.1 * 0.5 + 0.8 * 1));   // 85
+  assert.strictEqual(sc['p-c'], 100 * (0.8 * 1 + 0.1 * 0 + 0.1 * 0));     // 80
+});
+test('computeScores: нульові максимуми не дають NaN (ТЗ §7.2)', () => {
+  const session = { mode: 'advanced', presence: {
+    'p-a': { present: true, damage: 0, taken: 0, heal: 0 },
+    'p-b': { present: true, damage: 0, taken: 0, heal: 0 }
+  }, drops: [], claims: {} };
+  assert.deepStrictEqual(LMCore.computeScores(session, PBYID, CLSBYID, S),
+    { 'p-a': 0, 'p-b': 0 });
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
