@@ -494,10 +494,96 @@ function renderActiveTab() {
 }
 function renderAll() { renderHeader(); renderActiveTab(); }
 
-/* Заглушки вкладок — заповнюються Задачами 7–10 */
+/* ===== Вкладка 1: Подія та вклад (ТЗ §4.2) ===== */
 function renderTab1() {
+  const d = draft();
+  const players = pa().players.filter(p => p.isActive);
+  const rosterHtml = players.length === 0
+    ? '<p class="muted">Немає активних гравців. Додайте їх на вкладці «4. Бази та налаштування».</p>'
+    : players.map(p => {
+        const pr = d.presence[p.id] || {};
+        const present = !!pr.present;
+        const dis = present ? '' : ' disabled';
+        const controls = d.mode === 'simple'
+          ? '<label class="inline"><input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
+            (pr.top ? ' checked' : '') + dis + '> ТОП</label>'
+          : '<span class="metrics">' + [['damage', 'Damage'], ['taken', 'Taken'], ['heal', 'Heal']]
+              .map(([k, t]) => '<label>' + t + '<input type="number" min="0" step="1" class="inpMetric" ' +
+                'data-pid="' + p.id + '" data-metric="' + k + '" value="' +
+                (pr[k] > 0 ? pr[k] : '') + '"' + dis + '></label>').join('') + '</span>';
+        return '<div class="roster-row' + (present ? '' : ' absent') + '">' +
+          '<label class="inline"><input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
+          (present ? ' checked' : '') + '> Присутній</label>' +
+          '<span class="nick">' + escapeHtml(p.nickname) + '</span>' +
+          '<span class="muted small">' + escapeHtml(className(p.classId)) + '</span>' +
+          controls + '</div>';
+      }).join('');
   document.getElementById('tab1').innerHTML =
-    '<div class="card muted">Вкладка «Подія та вклад» — у розробці (Задача 7).</div>';
+    '<div class="card">' +
+      '<h2>Івент</h2>' +
+      '<div class="row">' +
+        '<input type="text" id="eventTypeInput" class="grow" list="eventTypeList" ' +
+          'placeholder="Тип івенту (напр., Вторгнення монстрів)" value="' +
+          escapeHtml(d.eventTypeName) + '" maxlength="60">' +
+        '<datalist id="eventTypeList">' + pa().eventTypes.map(t =>
+          '<option value="' + escapeHtml(t) + '">').join('') + '</datalist>' +
+      '</div>' +
+      '<div class="row" style="margin-top:8px">' +
+        '<span class="muted small">Режим вкладу:</span>' +
+        '<label class="inline"><input type="radio" name="mode" id="modeSimple" value="simple"' +
+          (d.mode === 'simple' ? ' checked' : '') + '> Простий (ТОП)</label>' +
+        '<label class="inline"><input type="radio" name="mode" id="modeAdvanced" value="advanced"' +
+          (d.mode === 'advanced' ? ' checked' : '') + '> Розширений (числа)</label>' +
+      '</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="row"><h2 class="grow">Присутні та вклад</h2>' +
+        '<button class="btn btn-sm" id="btnAllPresent">Всі присутні</button>' +
+        '<button class="btn btn-sm" id="btnNonePresent">Зняти всіх</button></div>' +
+      rosterHtml +
+    '</div>';
+
+  const tab = document.getElementById('tab1');
+  tab.querySelector('#eventTypeInput').addEventListener('change', e => {
+    draft().eventTypeName = e.target.value.trim(); save();
+  });
+  tab.querySelectorAll('input[name="mode"]').forEach(r =>
+    r.addEventListener('change', e => { draft().mode = e.target.value; save(); renderTab1(); }));
+  tab.querySelector('#btnAllPresent')?.addEventListener('click', () => {
+    for (const p of players) presenceOf(p.id).present = true;
+    save(); renderTab1();
+  });
+  tab.querySelector('#btnNonePresent')?.addEventListener('click', () => {
+    for (const p of players) presenceOf(p.id).present = false;
+    save(); renderTab1();
+  });
+  tab.querySelectorAll('.chkPresent').forEach(c =>
+    c.addEventListener('change', e => {
+      presenceOf(e.target.dataset.pid).present = e.target.checked;
+      save(); renderTab1();
+    }));
+  tab.querySelectorAll('.chkTop').forEach(c =>
+    c.addEventListener('change', e => {
+      presenceOf(e.target.dataset.pid).top = e.target.checked; save();
+    }));
+  tab.querySelectorAll('.inpMetric').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const v = Math.max(0, Number(e.target.value) || 0);
+      presenceOf(e.target.dataset.pid)[e.target.dataset.metric] = v;
+      e.target.value = v > 0 ? v : '';
+      save();
+    }));
+}
+function presenceOf(pid) {
+  const d = draft();
+  if (!d.presence[pid]) {
+    d.presence[pid] = { present: false, top: false, damage: 0, taken: 0, heal: 0 };
+  }
+  return d.presence[pid];
+}
+function className(classId) {
+  const c = db.classes.find(c => c.id === classId);
+  return c ? c.name : '—';
 }
 function renderTab2() {
   document.getElementById('tab2').innerHTML =
