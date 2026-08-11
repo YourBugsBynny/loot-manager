@@ -5,11 +5,142 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Loot Manager</title>
 <style>
-/* заповнюється Задачею 6 */
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #1c2330; --muted: #68718a;
+  --line: #dde1ea; --accent: #2f6fed; --accent-ink: #ffffff;
+  --danger: #c93030; --ok: #1d8f4e; --warn-bg: #fff6e5;
+  --r-common: #8a93a8; --r-rare: #2f8fd8; --r-epic: #9b59d0; --r-legendary: #e8912b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg); color: var(--ink); font-size: 16px; line-height: 1.4;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+h2 { font-size: 1.05rem; margin: 18px 0 8px; }
+h2:first-child { margin-top: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+
+#banner {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 100; max-width: min(92vw, 560px);
+  background: var(--ink); color: #fff; border-radius: 10px;
+  padding: 10px 14px; display: flex; gap: 10px; align-items: center;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
+#banner button { background: none; border: 0; color: #fff; font-size: 1.1rem; cursor: pointer; }
+
+header.appbar {
+  position: sticky; top: 0; z-index: 20; background: var(--card);
+  border-bottom: 1px solid var(--line);
+  display: flex; gap: 8px; align-items: center; padding: 10px 12px;
+}
+header.appbar .brand { font-weight: 700; white-space: nowrap; }
+header.appbar select { flex: 1; min-width: 0; max-width: 320px; }
+nav.tabs {
+  position: sticky; top: 49px; z-index: 19; background: var(--card);
+  border-bottom: 1px solid var(--line);
+  display: flex; overflow-x: auto; white-space: nowrap; scrollbar-width: thin;
+}
+nav.tabs .tab {
+  border: 0; background: none; padding: 10px 14px; cursor: pointer;
+  color: var(--muted); border-bottom: 3px solid transparent; flex: 0 0 auto;
+}
+nav.tabs .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+main { padding: 12px; max-width: 980px; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px; margin-bottom: 12px;
+}
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+
+.btn {
+  border: 1px solid var(--line); background: var(--card); border-radius: 9px;
+  padding: 8px 14px; cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-sm { padding: 4px 9px; font-size: 0.85rem; border-radius: 7px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+input[type="text"], input[type="number"], input[type="date"], input[type="search"], select, textarea {
+  border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: var(--card);
+  max-width: 100%;
+}
+input[type="number"] { width: 90px; }
+textarea { width: 100%; }
+label.inline { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+
+.badge {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 0.75rem; color: #fff; vertical-align: middle;
+}
+.badge.common { background: var(--r-common); }
+.badge.rare { background: var(--r-rare); }
+.badge.epic { background: var(--r-epic); }
+.badge.legendary { background: var(--r-legendary); }
+.badge.info { background: var(--accent); }
+.badge.plain { background: var(--muted); }
+
+.roster-row { display: flex; gap: 10px; align-items: center; padding: 7px 4px;
+  border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.roster-row:last-child { border-bottom: 0; }
+.roster-row .nick { min-width: 130px; font-weight: 600; }
+.roster-row.absent .nick { color: var(--muted); font-weight: 400; }
+.metrics { display: flex; gap: 6px; flex-wrap: wrap; }
+.metrics label { display: flex; flex-direction: column; font-size: 0.72rem; color: var(--muted); }
+
+.pos-row { padding: 9px 4px; border-bottom: 1px solid var(--line); }
+.pos-row:last-child { border-bottom: 0; }
+.pos-row .pos-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cancelled { text-decoration: line-through; opacity: .55; }
+
+.claims-cards { display: none; }
+@media (max-width: 699px) {
+  .claims-table { display: none; }
+  .claims-cards { display: block; }
+  header.appbar .brand { display: none; }
+}
+details.sect { border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  margin-bottom: 10px; }
+details.sect > summary { cursor: pointer; padding: 11px 13px; font-weight: 600; }
+details.sect > .sect-body { padding: 0 13px 13px; }
 </style>
 </head>
 <body>
 <noscript>Для роботи Loot Manager потрібен увімкнений JavaScript.</noscript>
+
+<div id="banner" hidden><span id="bannerMsg"></span><button id="bannerClose" title="Закрити">×</button></div>
+
+<header class="appbar">
+  <span class="brand">🎁 Loot Manager</span>
+  <select id="allianceSelect" title="Активний альянс"></select>
+  <button id="btnSettings" class="btn" title="Бази та налаштування">⚙️</button>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="1">1. Подія та вклад</button>
+  <button class="tab" data-tab="2">2. Здобич і заявки</button>
+  <button class="tab" data-tab="3">3. Розподіл</button>
+  <button class="tab" data-tab="4">4. Бази та налаштування</button>
+</nav>
+
+<main>
+  <section id="tab1"></section>
+  <section id="tab2" hidden></section>
+  <section id="tab3" hidden></section>
+  <section id="tab4" hidden></section>
+</main>
 
 <script id="core">
 'use strict';
@@ -288,7 +419,115 @@ const LMCore = (() => {
 
 <script id="app">
 'use strict';
-// заповнюється Задачами 6–10
+/* ===== Сховище та утиліти ===== */
+const STORAGE_KEY = 'lootManagerData';
+function nowISO() { return new Date().toISOString(); }
+function byId(arr) { return Object.fromEntries(arr.map(x => [x.id, x])); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+function banner(msg) {
+  const el = document.getElementById('banner');
+  document.getElementById('bannerMsg').textContent = msg;
+  el.hidden = false;
+  clearTimeout(banner._t);
+  banner._t = setTimeout(() => { el.hidden = true; }, 6000);
+}
+function load() {
+  let raw = null;
+  try { raw = localStorage.getItem(STORAGE_KEY); }
+  catch (e) { banner('LocalStorage недоступний: ' + e.message + '. Дані не збережуться!'); }
+  if (!raw) return LMCore.emptyDb(nowISO());
+  try {
+    const parsed = JSON.parse(raw);
+    const mig = LMCore.migrate(parsed);
+    if (!mig.ok) { banner('База не завантажена: ' + mig.error); return LMCore.emptyDb(nowISO()); }
+    return mig.db;
+  } catch (e) {
+    banner('База пошкоджена, створено нову. Помилка: ' + e.message);
+    return LMCore.emptyDb(nowISO());
+  }
+}
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+  catch (e) {
+    banner('Не вдалося зберегти (сховище переповнене?): ' + e.message +
+      ' Зробіть експорт JSON на вкладці 4!');
+  }
+}
+
+/* ===== Стан ===== */
+let db = null;
+const ui = { activeTab: 1 };
+
+function activeAlliance() { return db.alliances.find(a => a.id === db.activeAllianceId); }
+function pa() { return db.perAlliance[db.activeAllianceId]; }
+function draft() {
+  const data = pa();
+  if (!data.draftSession) {
+    data.draftSession = { eventTypeName: '', mode: 'simple', presence: {},
+      drops: [], claims: {}, overrides: {}, rollMemo: {} };
+  }
+  const d = data.draftSession;
+  if (!d.overrides) d.overrides = {};
+  if (!d.rollMemo) d.rollMemo = {};
+  return d;
+}
+
+/* ===== Каркас: шапка та вкладки ===== */
+function renderHeader() {
+  const sel = document.getElementById('allianceSelect');
+  sel.innerHTML = db.alliances.map(a =>
+    '<option value="' + a.id + '"' + (a.id === db.activeAllianceId ? ' selected' : '') + '>' +
+    escapeHtml(a.name) + '</option>').join('');
+}
+function switchTab(n) {
+  ui.activeTab = n;
+  document.querySelectorAll('nav.tabs .tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === String(n)));
+  for (let i = 1; i <= 4; i++) document.getElementById('tab' + i).hidden = (i !== n);
+  renderActiveTab();
+}
+function renderActiveTab() {
+  [null, renderTab1, renderTab2, renderTab3, renderTab4][ui.activeTab]();
+}
+function renderAll() { renderHeader(); renderActiveTab(); }
+
+/* Заглушки вкладок — заповнюються Задачами 7–10 */
+function renderTab1() {
+  document.getElementById('tab1').innerHTML =
+    '<div class="card muted">Вкладка «Подія та вклад» — у розробці (Задача 7).</div>';
+}
+function renderTab2() {
+  document.getElementById('tab2').innerHTML =
+    '<div class="card muted">Вкладка «Здобич і заявки» — у розробці (Задача 8).</div>';
+}
+function renderTab3() {
+  document.getElementById('tab3').innerHTML =
+    '<div class="card muted">Вкладка «Розподіл» — у розробці (Задача 9).</div>';
+}
+function renderTab4() {
+  document.getElementById('tab4').innerHTML =
+    '<div class="card muted">Вкладка «Бази та налаштування» — у розробці (Задача 10).</div>';
+}
+
+/* ===== Ініціалізація ===== */
+document.addEventListener('DOMContentLoaded', () => {
+  db = load();
+  save();
+  document.getElementById('bannerClose').addEventListener('click', () => {
+    document.getElementById('banner').hidden = true;
+  });
+  document.getElementById('allianceSelect').addEventListener('change', e => {
+    db.activeAllianceId = e.target.value;
+    save(); renderAll();
+  });
+  document.getElementById('btnSettings').addEventListener('click', () => switchTab(4));
+  document.querySelectorAll('nav.tabs .tab').forEach(b =>
+    b.addEventListener('click', () => switchTab(Number(b.dataset.tab))));
+  renderAll();
+});
 </script>
 </body>
 </html>
