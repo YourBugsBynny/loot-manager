@@ -585,9 +585,160 @@ function className(classId) {
   const c = db.classes.find(c => c.id === classId);
   return c ? c.name : '—';
 }
+/* ===== Вкладка 2: Здобич і заявки (ТЗ §4.3) ===== */
+const RARITY_UA = { common: 'Звичайний', rare: 'Рідкісний', epic: 'Епічний', legendary: 'Легендарний' };
+const CATEGORIES = ['Зброя', 'Броня', 'Біжутерія', 'Ресурси', 'Інше'];
+
+function rarityBadge(rarity) {
+  return '<span class="badge ' + rarity + '">' + (RARITY_UA[rarity] || rarity) + '</span>';
+}
+function presentPlayers() {
+  const d = draft();
+  return pa().players.filter(p => p.isActive && d.presence[p.id] && d.presence[p.id].present);
+}
+function claimsOf(pid) {
+  const d = draft();
+  if (!Array.isArray(d.claims[pid])) d.claims[pid] = [];
+  return d.claims[pid];
+}
+function invalidateCalc() {  // будь-яка зміна вхідних даних скидає ручні рішення й роли
+  const d = draft();
+  d.overrides = {}; d.rollMemo = {};
+}
+
 function renderTab2() {
+  const d = draft();
+  const itemsById = byId(db.items);
+  const present = presentPlayers();
+  const dropRows = d.drops.length === 0
+    ? '<p class="muted">Поки нічого не додано.</p>'
+    : d.drops.map(dr => {
+        const it = itemsById[dr.itemId];
+        return '<div class="roster-row"><span class="grow">' + escapeHtml(it ? it.name : '?') +
+          ' ' + (it ? rarityBadge(it.rarity) : '') + '</span>' +
+          '<label class="inline small">шт. <input type="number" min="1" step="1" class="inpDropQty" ' +
+            'data-iid="' + dr.itemId + '" value="' + dr.quantity + '"></label>' +
+          '<button class="btn btn-sm btn-danger btnDropDel" data-iid="' + dr.itemId + '">✕</button></div>';
+      }).join('');
+
+  const dropItems = d.drops.map(dr => itemsById[dr.itemId]).filter(Boolean);
+  let claimsHtml;
+  if (present.length === 0) {
+    claimsHtml = '<p class="muted">Немає присутніх гравців — позначте їх на вкладці «1. Подія та вклад».</p>';
+  } else if (dropItems.length === 0) {
+    claimsHtml = '<p class="muted">Додайте здобич вище, щоб проставити заявки.</p>';
+  } else {
+    const chk = (pid, iid) => '<input type="checkbox" class="chkClaim" data-pid="' + pid +
+      '" data-iid="' + iid + '"' + (claimsOf(pid).includes(iid) ? ' checked' : '') + '>';
+    claimsHtml =
+      '<div class="claims-table table-wrap"><table><thead><tr><th>Гравець</th>' +
+      dropItems.map(it => '<th>' + escapeHtml(it.name) + '</th>').join('') +
+      '</tr></thead><tbody>' +
+      present.map(p => '<tr><td><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
+        escapeHtml(className(p.classId)) + '</span></td>' +
+        dropItems.map(it => '<td>' + chk(p.id, it.id) + '</td>').join('') + '</tr>').join('') +
+      '</tbody></table></div>' +
+      '<div class="claims-cards">' +
+      present.map(p => '<div class="card"><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
+        escapeHtml(className(p.classId)) + '</span><div class="row" style="margin-top:6px">' +
+        dropItems.map(it => '<label class="inline small">' + chk(p.id, it.id) + ' ' +
+          escapeHtml(it.name) + '</label>').join('') + '</div></div>').join('') +
+      '</div>';
+  }
+
   document.getElementById('tab2').innerHTML =
-    '<div class="card muted">Вкладка «Здобич і заявки» — у розробці (Задача 8).</div>';
+    '<div class="card">' +
+      '<h2>Що випало</h2>' +
+      '<div class="row">' +
+        '<input type="text" id="itemSearch" class="grow" list="itemSearchList" placeholder="Назва предмета">' +
+        '<datalist id="itemSearchList">' + db.items.filter(i => !i.isArchived).map(i =>
+          '<option value="' + escapeHtml(i.name) + '">').join('') + '</datalist>' +
+        '<label class="inline small">шт. <input type="number" id="inpQty" min="1" step="1" value="1"></label>' +
+        '<button class="btn btn-primary" id="btnAddDrop">Додати</button>' +
+      '</div>' +
+      '<div id="quickItemForm" hidden style="margin-top:10px; border-top:1px dashed var(--line); padding-top:10px">' +
+        '<p class="small muted">Предмета немає в каталозі — створіть його:</p>' +
+        '<div class="row">' +
+          '<input type="text" id="qiName" class="grow" placeholder="Назва">' +
+          '<select id="qiCategory">' + CATEGORIES.map(c => '<option>' + c + '</option>').join('') + '</select>' +
+          '<select id="qiRarity">' + Object.entries(RARITY_UA).map(([v, t]) =>
+            '<option value="' + v + '">' + t + '</option>').join('') + '</select>' +
+        '</div>' +
+        '<div class="row" style="margin-top:6px">' +
+          '<span class="small muted">Кому підходить (порожньо = всім):</span>' +
+          db.classes.filter(c => !c.isArchived).map(c =>
+            '<label class="inline small"><input type="checkbox" class="qiClass" value="' + c.id + '"> ' +
+            escapeHtml(c.name) + '</label>').join('') +
+          '<button class="btn btn-primary btn-sm" id="btnQuickCreate">Створити і додати</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:10px">' + dropRows + '</div>' +
+    '</div>' +
+    '<div class="card"><h2>Заявки (хто що хоче)</h2>' + claimsHtml + '</div>';
+
+  const tab = document.getElementById('tab2');
+  tab.querySelector('#btnAddDrop').addEventListener('click', () => {
+    const name = tab.querySelector('#itemSearch').value.trim();
+    if (!name) { banner('Введіть назву предмета.'); return; }
+    const item = db.items.find(i =>
+      i.name.toLowerCase() === name.toLowerCase() && !i.isArchived);
+    if (!item) {
+      const f = tab.querySelector('#quickItemForm');
+      f.hidden = false;
+      f.querySelector('#qiName').value = name;
+      return;
+    }
+    addDrop(item.id, Number(tab.querySelector('#inpQty').value) || 1);
+  });
+  tab.querySelector('#btnQuickCreate').addEventListener('click', () => {
+    const name = tab.querySelector('#qiName').value.trim();
+    if (!name) { banner('Введіть назву предмета.'); return; }
+    if (db.items.some(i => i.name.toLowerCase() === name.toLowerCase())) {
+      banner('Предмет із такою назвою вже існує.'); return;
+    }
+    const item = {
+      id: LMCore.uuid(), name,
+      category: tab.querySelector('#qiCategory').value,
+      rarity: tab.querySelector('#qiRarity').value,
+      targetClasses: [...tab.querySelectorAll('.qiClass:checked')].map(c => c.value),
+      isArchived: false
+    };
+    db.items.push(item);
+    addDrop(item.id, Number(tab.querySelector('#inpQty').value) || 1);
+  });
+  tab.querySelectorAll('.inpDropQty').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const v = Math.max(1, Math.round(Number(e.target.value) || 1));
+      const dr = draft().drops.find(x => x.itemId === e.target.dataset.iid);
+      if (dr) { dr.quantity = v; invalidateCalc(); save(); }
+      e.target.value = v;
+    }));
+  tab.querySelectorAll('.btnDropDel').forEach(b =>
+    b.addEventListener('click', e => {
+      const iid = e.target.dataset.iid;
+      const d2 = draft();
+      d2.drops = d2.drops.filter(x => x.itemId !== iid);
+      for (const pid of Object.keys(d2.claims)) {
+        d2.claims[pid] = d2.claims[pid].filter(x => x !== iid);
+      }
+      invalidateCalc(); save(); renderTab2();
+    }));
+  tab.querySelectorAll('.chkClaim').forEach(c =>
+    c.addEventListener('change', e => {
+      const { pid, iid } = e.target.dataset;
+      const list = claimsOf(pid);
+      if (e.target.checked) { if (!list.includes(iid)) list.push(iid); }
+      else { const idx = list.indexOf(iid); if (idx >= 0) list.splice(idx, 1); }
+      invalidateCalc(); save();
+    }));
+}
+function addDrop(itemId, qty) {
+  const d = draft();
+  qty = Math.max(1, Math.round(qty));
+  const existing = d.drops.find(x => x.itemId === itemId);
+  if (existing) existing.quantity += qty;
+  else d.drops.push({ itemId, quantity: qty });
+  invalidateCalc(); save(); renderTab2();
 }
 function renderTab3() {
   document.getElementById('tab3').innerHTML =
