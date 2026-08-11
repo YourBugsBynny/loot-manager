@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loot Manager</title>
+<style>
+/* заповнюється Задачею 6 */
+</style>
+</head>
+<body>
+<noscript>Для роботи Loot Manager потрібен увімкнений JavaScript.</noscript>
+
+<script id="core">
+'use strict';
+const LMCore = (() => {
+  const DEFAULTS = Object.freeze({
+    scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
+    historyDays: 14, wWon: 50,
+    rarityWeights: Object.freeze({ common: 1, rare: 2, epic: 4, legendary: 8 }),
+    webhookUrl: ''
+  });
+  const RARITY_RANK = Object.freeze({ common: 1, rare: 2, epic: 3, legendary: 4 });
+  function uuid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+  return { DEFAULTS, RARITY_RANK, uuid };
+})();
+</script>
+
+<script id="app">
+'use strict';
+// заповнюється Задачами 6–10
+</script>
+</body>
+</html>
