@@ -740,9 +740,139 @@ function addDrop(itemId, qty) {
   else d.drops.push({ itemId, quantity: qty });
   invalidateCalc(); save(); renderTab2();
 }
+/* ===== Вкладка 3: Розподіл (ТЗ §4.4, §5) ===== */
+// Етап 2 (ТЗ §2.2): DiscordWebhookService робитиме POST на settings.webhookUrl {content: text}
+const notificationService = {
+  async send(reportText) { /* NoopNotificationService — Етап 1 */ }
+};
+
+function runCalc() {
+  const d = draft();
+  return LMCore.distribute({
+    session: d,
+    playersById: byId(pa().players),
+    classesById: byId(db.classes),
+    itemsById: byId(db.items),
+    history: pa().history,
+    settings: db.settings,
+    nowISO: nowISO(),
+    rng: Math.random,
+    overrides: d.overrides,
+    rollMemo: d.rollMemo
+  });
+}
+
 function renderTab3() {
+  const d = draft();
+  const itemsById = byId(db.items);
+  const playersById = byId(pa().players);
+  const present = presentPlayers();
+  const canCalc = present.length > 0 && d.drops.length > 0;
+
+  let resultHtml = '';
+  if (ui.calcResult) {
+    const { positions, scores } = ui.calcResult;
+    const topSet = LMCore.topContributors(d, scores);
+    const fmt = n => (Math.round(n * 10) / 10).toString();
+    const rows = positions.map(pos => {
+      const item = itemsById[pos.itemId];
+      const winner = pos.winnerId ? playersById[pos.winnerId] : null;
+      const badges =
+        (pos.classBonus ? ' <span class="badge info">клас-бонус</span>' : '') +
+        (pos.rolled ? ' <span class="badge plain">🎲 рол</span>' : '') +
+        (pos.manual ? ' <span class="badge plain">ручне</span>' : '');
+      const candOpts = pos.candidates.map(c =>
+        '<option value="' + c.playerId + '"' + (c.playerId === pos.winnerId ? ' selected' : '') + '>' +
+        escapeHtml(playersById[c.playerId] ? playersById[c.playerId].nickname : '?') +
+        ' (' + fmt(c.priority) + ')</option>').join('');
+      const otherOpts = present
+        .filter(p => !pos.candidates.some(c => c.playerId === p.id))
+        .map(p => '<option value="' + p.id + '"' + (p.id === pos.winnerId ? ' selected' : '') + '>' +
+          escapeHtml(p.nickname) + '</option>').join('');
+      return '<div class="pos-row"><div class="pos-head">' +
+        '<b>' + escapeHtml(item ? item.name : '?') + '</b> ' +
+        (item ? rarityBadge(item.rarity) : '') +
+        ' <span class="muted small">штука ' + (pos.copyIndex + 1) + '</span>' +
+        (winner
+          ? ' → <b>' + escapeHtml(winner.nickname) + '</b>' +
+            (pos.priority !== null ? ' <span class="muted small">(' + fmt(pos.priority) + ')</span>' : '')
+          : ' → <span class="muted">Вільний залишок</span>') +
+        badges + '</div>' +
+        '<div class="row small" style="margin-top:4px"><span class="muted">Переможець:</span>' +
+        '<select class="winnerSelect" data-key="' + pos.key + '">' +
+          '<option value=""' + (pos.manual ? '' : ' selected') + '>— авто —</option>' +
+          (candOpts ? '<optgroup label="Претенденти">' + candOpts + '</optgroup>' : '') +
+          (otherOpts ? '<optgroup label="Інший присутній гравець">' + otherOpts + '</optgroup>' : '') +
+        '</select></div></div>';
+    }).join('');
+    const reportText = LMCore.formatReport({
+      allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || 'Івент',
+      positions, itemsById, playersById, classesById: byId(db.classes), topSet });
+    resultHtml =
+      '<div class="card"><h2>Результат</h2>' + rows + '</div>' +
+      '<div class="card"><h2>Текст для чату</h2>' +
+        '<textarea id="reportText" rows="10" readonly>' + escapeHtml(reportText) + '</textarea>' +
+        '<div class="row" style="margin-top:8px">' +
+          '<button class="btn" id="btnCopy">📋 Скопіювати текст</button>' +
+          '<button class="btn btn-primary" id="btnConfirm">✅ Підтвердити та зберегти</button>' +
+        '</div></div>';
+  }
+
   document.getElementById('tab3').innerHTML =
-    '<div class="card muted">Вкладка «Розподіл» — у розробці (Задача 9).</div>';
+    '<div class="card"><div class="row">' +
+      '<button class="btn btn-primary" id="btnCalc"' + (canCalc ? '' : ' disabled') +
+        '>⚖️ Розрахувати розподіл</button>' +
+      (canCalc ? '' : '<span class="muted small">Потрібні присутні гравці (вкладка 1) і здобич (вкладка 2).</span>') +
+    '</div></div>' + resultHtml;
+
+  const tab = document.getElementById('tab3');
+  tab.querySelector('#btnCalc').addEventListener('click', () => {
+    const res = runCalc();
+    for (const p of res.positions) {
+      if (p.rolled && p.winnerId && !p.manual) draft().rollMemo[p.key] = p.winnerId;
+    }
+    ui.calcResult = res;
+    save(); renderTab3();
+  });
+  tab.querySelectorAll('.winnerSelect').forEach(sel =>
+    sel.addEventListener('change', e => {
+      const key = e.target.dataset.key;
+      if (e.target.value) draft().overrides[key] = e.target.value;
+      else delete draft().overrides[key];
+      const res = runCalc();   // перерахунок позицій нижче з урахуванням override
+      for (const p of res.positions) {
+        if (p.rolled && p.winnerId && !p.manual) draft().rollMemo[p.key] = p.winnerId;
+      }
+      ui.calcResult = res;
+      save(); renderTab3();
+    }));
+  tab.querySelector('#btnCopy')?.addEventListener('click', async () => {
+    const t = tab.querySelector('#reportText');
+    try { await navigator.clipboard.writeText(t.value); banner('Скопійовано ✓'); }
+    catch (err) {
+      t.focus(); t.select();
+      banner(document.execCommand('copy') ? 'Скопійовано ✓' : 'Не вдалося скопіювати — виділіть текст вручну.');
+    }
+  });
+  tab.querySelector('#btnConfirm')?.addEventListener('click', async () => {
+    if (!ui.calcResult) return;
+    if (!confirm('Зберегти розподіл в історію? Чернетку сеансу буде очищено.')) return;
+    const d2 = draft();
+    const records = LMCore.buildRecords({
+      positions: ui.calcResult.positions, itemsById: byId(db.items),
+      playersById: byId(pa().players), scores: ui.calcResult.scores,
+      nowISO: nowISO(), eventTypeName: d2.eventTypeName || 'Івент' });
+    pa().history.push(...records);
+    const evName = (d2.eventTypeName || '').trim();
+    if (evName && !pa().eventTypes.includes(evName)) pa().eventTypes.push(evName);
+    const text = tab.querySelector('#reportText').value;
+    pa().draftSession = null;
+    ui.calcResult = null;
+    save();
+    try { await notificationService.send(text); } catch (err) { /* Етап 2 */ }
+    banner('Збережено в історію ✓ (' + records.length + ' записів)');
+    renderTab3();
+  });
 }
 function renderTab4() {
   document.getElementById('tab4').innerHTML =
