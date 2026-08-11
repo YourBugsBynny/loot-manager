@@ -874,9 +874,446 @@ function renderTab3() {
     renderTab3();
   });
 }
+/* ===== Вкладка 4: Бази та налаштування (ТЗ §4.5) ===== */
+const ROLES = ['Офіцер', 'Ветеран', 'Учасник'];
+ui.tab4open = ui.tab4open || new Set(['alliances']);
+ui.histFilter = ui.histFilter || { playerId: '', from: '', to: '' };
+
+function mutated() { ui.calcResult = null; save(); }
+function anyHistoryHasItem(itemId) {
+  return Object.values(db.perAlliance).some(x => x.history.some(r => r.itemId === itemId));
+}
+function anyPlayerHasClass(classId) {
+  return Object.values(db.perAlliance).some(x => x.players.some(p => p.classId === classId));
+}
+function sect(id, title, bodyHtml) {
+  return '<details class="sect" data-sect="' + id + '"' +
+    (ui.tab4open.has(id) ? ' open' : '') + '><summary>' + title + '</summary>' +
+    '<div class="sect-body">' + bodyHtml + '</div></details>';
+}
+
 function renderTab4() {
+  const paData = pa();
+  const clsOptions = sel => db.classes.filter(c => !c.isArchived || c.id === sel)
+    .map(c => '<option value="' + c.id + '"' + (c.id === sel ? ' selected' : '') + '>' +
+      escapeHtml(c.name) + '</option>').join('');
+
+  /* — Альянси — */
+  const alliancesHtml =
+    db.alliances.map(a => '<div class="roster-row">' +
+      '<input type="text" class="inpAllianceName grow" data-aid="' + a.id + '" value="' +
+        escapeHtml(a.name) + '" maxlength="40">' +
+      '<button class="btn btn-sm btn-danger btnDelAlliance" data-aid="' + a.id + '">Видалити</button>' +
+      '</div>').join('') +
+    '<div class="row" style="margin-top:8px">' +
+      '<input type="text" id="inpNewAlliance" class="grow" placeholder="Назва нового альянсу" maxlength="40">' +
+      '<button class="btn btn-primary btn-sm" id="btnAddAlliance">Додати альянс</button></div>';
+
+  /* — Гравці — */
+  const playersHtml =
+    '<div class="table-wrap"><table><thead><tr><th>Нік</th><th>Клас</th><th>Статус</th><th>Активний</th><th></th></tr></thead><tbody>' +
+    paData.players.map(p => '<tr' + (p.isActive ? '' : ' class="cancelled"') + '>' +
+      '<td><input type="text" class="inpNick" data-pid="' + p.id + '" value="' +
+        escapeHtml(p.nickname) + '" maxlength="30" style="width:130px"></td>' +
+      '<td><select class="selClass" data-pid="' + p.id + '">' + clsOptions(p.classId) + '</select></td>' +
+      '<td><select class="selRole" data-pid="' + p.id + '">' + ROLES.map(r =>
+        '<option' + (r === p.role ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></td>' +
+      '<td><input type="checkbox" class="chkActive" data-pid="' + p.id + '"' +
+        (p.isActive ? ' checked' : '') + '></td>' +
+      '<td><button class="btn btn-sm btn-danger btnDelPlayer" data-pid="' + p.id + '">✕</button></td>' +
+      '</tr>').join('') +
+    '</tbody></table></div>' +
+    '<div class="row" style="margin-top:8px">' +
+      '<input type="text" id="inpNewNick" placeholder="Нікнейм" maxlength="30" class="grow">' +
+      '<select id="selNewClass">' + clsOptions(null) + '</select>' +
+      '<select id="selNewRole">' + ROLES.map(r =>
+        '<option' + (r === 'Учасник' ? ' selected' : '') + '>' + r + '</option>').join('') + '</select>' +
+      '<button class="btn btn-primary btn-sm" id="btnAddPlayer">Додати гравця</button></div>';
+
+  /* — Предмети — */
+  const itemFilter = (ui.itemFilter || '').toLowerCase();
+  const itemsShown = db.items.filter(i => !itemFilter || i.name.toLowerCase().includes(itemFilter));
+  const itemsHtml =
+    '<div class="row"><input type="search" id="inpItemFilter" class="grow" placeholder="Пошук у каталозі" value="' +
+      escapeHtml(ui.itemFilter || '') + '"></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Назва</th><th>Категорія</th><th>Рідкість</th><th>Класи</th><th></th></tr></thead><tbody>' +
+    itemsShown.map(i => '<tr' + (i.isArchived ? ' class="cancelled"' : '') + '>' +
+      '<td><input type="text" class="inpItemName" data-iid="' + i.id + '" value="' +
+        escapeHtml(i.name) + '" maxlength="60" style="width:150px"></td>' +
+      '<td><select class="selItemCat" data-iid="' + i.id + '">' + CATEGORIES.map(c =>
+        '<option' + (c === i.category ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></td>' +
+      '<td><select class="selItemRarity" data-iid="' + i.id + '">' +
+        Object.entries(RARITY_UA).map(([v, t]) => '<option value="' + v + '"' +
+          (v === i.rarity ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></td>' +
+      '<td><details><summary class="small">' +
+        (i.targetClasses.length === 0 ? 'всім' : i.targetClasses.map(className).map(escapeHtml).join(', ')) +
+        '</summary>' + db.classes.filter(c => !c.isArchived).map(c =>
+          '<label class="inline small"><input type="checkbox" class="chkItemClass" data-iid="' + i.id +
+          '" value="' + c.id + '"' + (i.targetClasses.includes(c.id) ? ' checked' : '') + '> ' +
+          escapeHtml(c.name) + '</label> ').join('') + '</details></td>' +
+      '<td class="row">' +
+        '<button class="btn btn-sm btnArchItem" data-iid="' + i.id + '">' +
+          (i.isArchived ? 'Розархівувати' : 'Архівувати') + '</button>' +
+        '<button class="btn btn-sm btn-danger btnDelItem" data-iid="' + i.id + '">✕</button></td>' +
+      '</tr>').join('') +
+    '</tbody></table></div>' +
+    '<p class="muted small">Новий предмет додається на вкладці «2. Здобич і заявки» (форма швидкого створення).</p>';
+
+  /* — Класи — */
+  const classesHtml =
+    '<div class="table-wrap"><table><thead><tr><th>Назва</th><th>w<sub>dmg</sub></th><th>w<sub>taken</sub></th><th>w<sub>heal</sub></th><th></th></tr></thead><tbody>' +
+    db.classes.map(c => '<tr' + (c.isArchived ? ' class="cancelled"' : '') + '>' +
+      '<td><input type="text" class="inpClsName" data-cid="' + c.id + '" value="' +
+        escapeHtml(c.name) + '" maxlength="30" style="width:130px"></td>' +
+      ['wDmg', 'wTaken', 'wHeal'].map(k =>
+        '<td><input type="number" class="inpClsW" data-cid="' + c.id + '" data-w="' + k +
+        '" min="0" max="1" step="0.05" value="' + c[k] + '" style="width:70px"></td>').join('') +
+      '<td class="row"><button class="btn btn-sm btnArchCls" data-cid="' + c.id + '">' +
+        (c.isArchived ? 'Розархівувати' : 'Архівувати') + '</button>' +
+      '<button class="btn btn-sm btn-danger btnDelCls" data-cid="' + c.id + '">✕</button></td></tr>').join('') +
+    '</tbody></table></div>' +
+    '<div class="row" style="margin-top:8px">' +
+      '<input type="text" id="inpNewClsName" placeholder="Назва класу" maxlength="30" class="grow">' +
+      '<button class="btn btn-primary btn-sm" id="btnAddCls">Додати клас (ваги 0.8/0.1/0.1)</button></div>';
+
+  /* — Типи івентів — */
+  const eventsHtml = paData.eventTypes.length === 0
+    ? '<p class="muted">Список порожній — назви додаються автоматично при підтвердженні розподілу.</p>'
+    : paData.eventTypes.map((t, idx) => '<div class="roster-row"><span class="grow">' +
+        escapeHtml(t) + '</span><button class="btn btn-sm btn-danger btnDelEvent" data-idx="' +
+        idx + '">✕</button></div>').join('');
+
+  /* — Історія — */
+  const f = ui.histFilter;
+  const histShown = paData.history.filter(r => {
+    if (f.playerId && r.playerId !== f.playerId) return false;
+    if (f.from && r.timestamp < f.from) return false;
+    if (f.to && r.timestamp > f.to + 'T23:59:59.999Z') return false;
+    return true;
+  }).slice().reverse();
+  const historyHtml =
+    '<div class="row">' +
+      '<select id="histPlayerFilter"><option value="">— всі гравці —</option>' +
+        paData.players.map(p => '<option value="' + p.id + '"' +
+          (p.id === f.playerId ? ' selected' : '') + '>' + escapeHtml(p.nickname) + '</option>').join('') +
+      '</select>' +
+      '<label class="inline small">з <input type="date" id="histFrom" value="' + f.from + '"></label>' +
+      '<label class="inline small">по <input type="date" id="histTo" value="' + f.to + '"></label>' +
+    '</div>' +
+    (histShown.length === 0 ? '<p class="muted" style="margin-top:8px">Записів немає.</p>' :
+      histShown.map(r => '<div class="pos-row' + (r.cancelled ? ' cancelled' : '') + '">' +
+        '<div class="pos-head"><span class="muted small">' + r.timestamp.slice(0, 10) + '</span> ' +
+        '<span class="badge plain">' + escapeHtml(r.eventTypeName) + '</span> ' +
+        '<b>' + escapeHtml(r.itemNameSnapshot) + '</b> ×' + r.quantity +
+        ' → <b>' + escapeHtml(r.playerNicknameSnapshot) + '</b>' +
+        ' <span class="muted small">(бал ' + (Math.round(r.scoreAtDistribution * 10) / 10) + ')</span>' +
+        (r.rolled ? ' <span class="badge plain">🎲</span>' : '') +
+        (r.manual ? ' <span class="badge plain">ручне</span>' : '') +
+        (r.cancelled ? '' : ' <button class="btn btn-sm btn-danger btnCancelRec" data-rid="' +
+          r.id + '">Скасувати</button>') +
+        '</div></div>').join(''));
+
+  /* — Налаштування — */
+  const st = db.settings;
+  const numField = (key, label, val) =>
+    '<label class="inline small">' + label +
+    ' <input type="number" class="inpSetting" data-key="' + key + '" value="' + val + '" step="any"></label>';
+  const settingsHtml =
+    '<div class="row">' +
+      numField('scoreTop', 'Бал «ТОП»', st.scoreTop) +
+      numField('scorePresent', 'Бал присутнього', st.scorePresent) +
+      numField('pClass', 'Клас-бонус P', st.pClass) +
+    '</div><div class="row" style="margin-top:6px">' +
+      numField('kPenalty', 'Штраф історії K', st.kPenalty) +
+      numField('historyDays', 'Вікно історії, днів', st.historyDays) +
+      numField('wWon', 'Штраф за виграш у сеансі', st.wWon) +
+    '</div><p class="small muted" style="margin-bottom:4px">Ваги рідкості в анти-жадібності:</p><div class="row">' +
+      Object.entries(RARITY_UA).map(([v, t]) =>
+        numField('rarityWeights.' + v, t, st.rarityWeights[v])).join('') +
+    '</div><div class="row" style="margin-top:8px">' +
+      '<button class="btn btn-sm" id="btnResetSettings">Скинути до дефолтів</button></div>';
+
+  /* — Резервна копія — */
+  const backupHtml =
+    '<div class="row">' +
+      '<button class="btn" id="btnExport">⬇️ Експорт JSON</button>' +
+      '<label class="btn">⬆️ Імпорт JSON<input type="file" id="importFile" accept=".json,application/json" hidden></label>' +
+    '</div><p class="muted small">Імпорт повністю замінює базу після перевірки формату та підтвердження.</p>';
+
   document.getElementById('tab4').innerHTML =
-    '<div class="card muted">Вкладка «Бази та налаштування» — у розробці (Задача 10).</div>';
+    sect('alliances', '🏰 Альянси (' + db.alliances.length + ')', alliancesHtml) +
+    sect('players', '👥 Гравці (' + paData.players.length + ')', playersHtml) +
+    sect('items', '⚔️ Предмети — спільний каталог (' + db.items.length + ')', itemsHtml) +
+    sect('classes', '🛡️ Класи (' + db.classes.length + ')', classesHtml) +
+    sect('events', '📅 Типи івентів (' + paData.eventTypes.length + ')', eventsHtml) +
+    sect('history', '📜 Історія (' + paData.history.length + ')', historyHtml) +
+    sect('settings', '⚙️ Налаштування алгоритму', settingsHtml) +
+    sect('backup', '💾 Резервна копія', backupHtml);
+
+  wireTab4();
+}
+
+function wireTab4() {
+  const tab = document.getElementById('tab4');
+  tab.querySelectorAll('details.sect').forEach(dEl =>
+    dEl.addEventListener('toggle', () => {
+      if (dEl.open) ui.tab4open.add(dEl.dataset.sect);
+      else ui.tab4open.delete(dEl.dataset.sect);
+    }));
+
+  /* Альянси */
+  tab.querySelector('#btnAddAlliance').addEventListener('click', () => {
+    const name = tab.querySelector('#inpNewAlliance').value.trim();
+    if (!name) { banner('Введіть назву альянсу.'); return; }
+    if (db.alliances.some(a => a.name.toLowerCase() === name.toLowerCase())) {
+      banner('Альянс із такою назвою вже існує.'); return;
+    }
+    const a = { id: LMCore.uuid(), name, createdAt: nowISO() };
+    db.alliances.push(a);
+    db.perAlliance[a.id] = { players: [], history: [], eventTypes: [], draftSession: null };
+    mutated(); renderAll(); renderTab4();
+  });
+  tab.querySelectorAll('.inpAllianceName').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const a = db.alliances.find(x => x.id === e.target.dataset.aid);
+      const name = e.target.value.trim();
+      if (!name) { e.target.value = a.name; return; }
+      a.name = name; mutated(); renderHeader();
+    }));
+  tab.querySelectorAll('.btnDelAlliance').forEach(b =>
+    b.addEventListener('click', e => {
+      if (db.alliances.length <= 1) { banner('Останній альянс видалити не можна.'); return; }
+      const a = db.alliances.find(x => x.id === e.target.dataset.aid);
+      if (!confirm('Видалити альянс «' + a.name + '» РАЗОМ з усіма його гравцями та історією? ' +
+        'Дію неможливо скасувати.')) return;
+      db.alliances = db.alliances.filter(x => x.id !== a.id);
+      delete db.perAlliance[a.id];
+      if (db.activeAllianceId === a.id) db.activeAllianceId = db.alliances[0].id;
+      mutated(); renderAll(); renderTab4();
+    }));
+
+  /* Гравці */
+  tab.querySelector('#btnAddPlayer').addEventListener('click', () => {
+    const nick = tab.querySelector('#inpNewNick').value.trim();
+    if (!nick) { banner('Введіть нікнейм.'); return; }
+    if (pa().players.some(p => p.nickname.toLowerCase() === nick.toLowerCase())) {
+      banner('Гравець із таким ніком уже є в цьому альянсі.'); return;
+    }
+    pa().players.push({ id: LMCore.uuid(), nickname: nick,
+      classId: tab.querySelector('#selNewClass').value,
+      role: tab.querySelector('#selNewRole').value, isActive: true, createdAt: nowISO() });
+    mutated(); renderTab4();
+  });
+  tab.querySelectorAll('.inpNick').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      const nick = e.target.value.trim();
+      if (!nick) { e.target.value = p.nickname; return; }
+      if (pa().players.some(x => x.id !== p.id &&
+          x.nickname.toLowerCase() === nick.toLowerCase())) {
+        banner('Такий нік уже зайнятий.'); e.target.value = p.nickname; return;
+      }
+      p.nickname = nick; mutated();
+    }));
+  tab.querySelectorAll('.selClass').forEach(sel =>
+    sel.addEventListener('change', e => {
+      pa().players.find(x => x.id === e.target.dataset.pid).classId = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.selRole').forEach(sel =>
+    sel.addEventListener('change', e => {
+      pa().players.find(x => x.id === e.target.dataset.pid).role = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.chkActive').forEach(c =>
+    c.addEventListener('change', e => {
+      pa().players.find(x => x.id === e.target.dataset.pid).isActive = e.target.checked;
+      mutated(); renderTab4();
+    }));
+  tab.querySelectorAll('.btnDelPlayer').forEach(b =>
+    b.addEventListener('click', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      if (pa().history.some(r => r.playerId === p.id)) {
+        banner('У гравця є записи в історії — лише деактивація (зніміть галочку «Активний»).');
+        return;
+      }
+      if (!confirm('Видалити гравця «' + p.nickname + '»?')) return;
+      pa().players = pa().players.filter(x => x.id !== p.id);
+      const d = pa().draftSession;
+      if (d) { delete d.presence[p.id]; delete d.claims[p.id]; }
+      mutated(); renderTab4();
+    }));
+
+  /* Предмети */
+  tab.querySelector('#inpItemFilter').addEventListener('input', e => {
+    ui.itemFilter = e.target.value; renderTab4();
+    const inp = document.getElementById('inpItemFilter');
+    inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+  });
+  tab.querySelectorAll('.inpItemName').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      const name = e.target.value.trim();
+      if (!name) { e.target.value = it.name; return; }
+      if (db.items.some(x => x.id !== it.id && x.name.toLowerCase() === name.toLowerCase())) {
+        banner('Предмет із такою назвою вже існує.'); e.target.value = it.name; return;
+      }
+      it.name = name; mutated();
+    }));
+  tab.querySelectorAll('.selItemCat').forEach(sel =>
+    sel.addEventListener('change', e => {
+      db.items.find(x => x.id === e.target.dataset.iid).category = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.selItemRarity').forEach(sel =>
+    sel.addEventListener('change', e => {
+      db.items.find(x => x.id === e.target.dataset.iid).rarity = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.chkItemClass').forEach(c =>
+    c.addEventListener('change', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      const cid = e.target.value;
+      if (e.target.checked) { if (!it.targetClasses.includes(cid)) it.targetClasses.push(cid); }
+      else it.targetClasses = it.targetClasses.filter(x => x !== cid);
+      mutated();
+    }));
+  tab.querySelectorAll('.btnArchItem').forEach(b =>
+    b.addEventListener('click', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      it.isArchived = !it.isArchived; mutated(); renderTab4();
+    }));
+  tab.querySelectorAll('.btnDelItem').forEach(b =>
+    b.addEventListener('click', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      if (anyHistoryHasItem(it.id)) {
+        banner('Предмет фігурує в історії — доступна лише архівація.'); return;
+      }
+      if (!confirm('Видалити предмет «' + it.name + '» з каталогу?')) return;
+      db.items = db.items.filter(x => x.id !== it.id);
+      for (const x of Object.values(db.perAlliance)) {
+        const d = x.draftSession;
+        if (d) {
+          d.drops = d.drops.filter(dr => dr.itemId !== it.id);
+          for (const pid of Object.keys(d.claims)) {
+            d.claims[pid] = d.claims[pid].filter(i => i !== it.id);
+          }
+        }
+      }
+      mutated(); renderTab4();
+    }));
+
+  /* Класи */
+  tab.querySelector('#btnAddCls').addEventListener('click', () => {
+    const name = tab.querySelector('#inpNewClsName').value.trim();
+    if (!name) { banner('Введіть назву класу.'); return; }
+    if (db.classes.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      banner('Клас із такою назвою вже існує.'); return;
+    }
+    db.classes.push({ id: LMCore.uuid(), name, wDmg: 0.8, wTaken: 0.1, wHeal: 0.1,
+      isArchived: false });
+    mutated(); renderTab4();
+  });
+  tab.querySelectorAll('.inpClsName').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      const name = e.target.value.trim();
+      if (!name) { e.target.value = c.name; return; }
+      c.name = name; mutated();
+    }));
+  tab.querySelectorAll('.inpClsW').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      const v = Math.min(1, Math.max(0, Number(e.target.value) || 0));
+      c[e.target.dataset.w] = v; e.target.value = v; mutated();
+    }));
+  tab.querySelectorAll('.btnArchCls').forEach(b =>
+    b.addEventListener('click', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      c.isArchived = !c.isArchived; mutated(); renderTab4();
+    }));
+  tab.querySelectorAll('.btnDelCls').forEach(b =>
+    b.addEventListener('click', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      if (anyPlayerHasClass(c.id)) {
+        banner('Є гравці цього класу — доступна лише архівація.'); return;
+      }
+      if (!confirm('Видалити клас «' + c.name + '»?')) return;
+      db.classes = db.classes.filter(x => x.id !== c.id);
+      db.items.forEach(i => { i.targetClasses = i.targetClasses.filter(x => x !== c.id); });
+      mutated(); renderTab4();
+    }));
+
+  /* Типи івентів */
+  tab.querySelectorAll('.btnDelEvent').forEach(b =>
+    b.addEventListener('click', e => {
+      pa().eventTypes.splice(Number(e.target.dataset.idx), 1);
+      mutated(); renderTab4();
+    }));
+
+  /* Історія */
+  tab.querySelector('#histPlayerFilter').addEventListener('change', e => {
+    ui.histFilter.playerId = e.target.value; renderTab4();
+  });
+  tab.querySelector('#histFrom').addEventListener('change', e => {
+    ui.histFilter.from = e.target.value; renderTab4();
+  });
+  tab.querySelector('#histTo').addEventListener('change', e => {
+    ui.histFilter.to = e.target.value; renderTab4();
+  });
+  tab.querySelectorAll('.btnCancelRec').forEach(b =>
+    b.addEventListener('click', e => {
+      const r = pa().history.find(x => x.id === e.target.dataset.rid);
+      if (!confirm('Скасувати запис «' + r.itemNameSnapshot + ' → ' +
+        r.playerNicknameSnapshot + '»? Він перестане впливати на анти-жадібність.')) return;
+      r.cancelled = true; mutated(); renderTab4();
+    }));
+
+  /* Налаштування */
+  tab.querySelectorAll('.inpSetting').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const key = e.target.dataset.key;
+      const v = Math.max(0, Number(e.target.value) || 0);
+      if (key.startsWith('rarityWeights.')) {
+        db.settings.rarityWeights[key.split('.')[1]] = v;
+      } else if (key === 'historyDays') {
+        db.settings.historyDays = Math.round(v);
+      } else {
+        db.settings[key] = v;
+      }
+      e.target.value = key === 'historyDays' ? Math.round(v) : v;
+      mutated();
+    }));
+  tab.querySelector('#btnResetSettings').addEventListener('click', () => {
+    if (!confirm('Повернути всі константи алгоритму до значень за замовчуванням?')) return;
+    const wh = db.settings.webhookUrl;
+    db.settings = LMCore.defaultSettings();
+    db.settings.webhookUrl = wh;
+    mutated(); renderTab4();
+  });
+
+  /* Резервна копія */
+  tab.querySelector('#btnExport').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'lootmanager-backup-' + nowISO().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  tab.querySelector('#importFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (err) { banner('Файл не є коректним JSON: ' + err.message); return; }
+      const v = LMCore.validateImport(parsed);
+      if (!v.ok) { banner('Імпорт відхилено: ' + v.error); return; }
+      if (!confirm('Замінити ВСЮ поточну базу вмістом файлу «' + file.name + '»?')) return;
+      db = v.db; ui.calcResult = null; save(); renderAll(); renderTab4();
+      banner('Базу імпортовано ✓');
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
 }
 
 /* ===== Ініціалізація ===== */
