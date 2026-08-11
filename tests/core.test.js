@@ -22,7 +22,7 @@ test('LMCore існує, DEFAULTS відповідає ТЗ §3.6', () => {
     scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
     historyDays: 14, wWon: 50,
     rarityWeights: { common: 1, rare: 2, epic: 4, legendary: 8 },
-    webhookUrl: ''
+    webhookUrl: '', language: 'uk'
   });
   assert.ok(Object.isFrozen(LMCore.DEFAULTS));
 });
@@ -310,6 +310,55 @@ test('buildRecords: групування пар гравець×предмет, 
   const swordRec = recs.find(r => r.itemId === 'i-sword');
   assert.deepStrictEqual([swordRec.quantity, swordRec.rolled, swordRec.manual],
     [1, false, false]);
+});
+
+// ---- i18n (v1.1) ----
+test('migrate: бекфіл settings.language для старих баз v1', () => {
+  const db = LMCore.emptyDb(NOW);
+  delete db.settings.language;
+  const mig = LMCore.migrate(db);
+  assert.strictEqual(mig.ok, true);
+  assert.strictEqual(mig.db.settings.language, 'uk');
+});
+test('formatReport: російська — побайтово', () => {
+  const itemsById = { b: mkItem('b', 'Скриня', 'common') };
+  const mkPosL = (ci, w) => ({ key: 'b#' + ci, itemId: 'b', copyIndex: ci, winnerId: w,
+    priority: 0, rolled: false, manual: false, classBonus: false, candidates: [] });
+  const text = LMCore.formatReport({ allianceName: 'Alpha', eventTypeName: 'PvP',
+    positions: [mkPosL(0, 'p-a'), mkPosL(1, null)],
+    itemsById, playersById: PBYID, classesById: CLSBYID,
+    topSet: new Set(['p-a']), lang: 'ru' });
+  assert.strictEqual(text,
+    '📜 [АЛЬЯНС: Alpha] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (PvP)\n' +
+    '\n' +
+    '🔹 Скриня (2 шт.) — @Andriy [Танк | ТОП Вклад], [Свободный остаток]\n' +
+    '\n' +
+    'Спасибо всем за участие! Предметы ждут в магазине альянса.');
+});
+test('formatReport: англійська — побайтово', () => {
+  const itemsById = { b: mkItem('b', 'Скриня', 'common') };
+  const mkPosL = (ci, w) => ({ key: 'b#' + ci, itemId: 'b', copyIndex: ci, winnerId: w,
+    priority: 0, rolled: false, manual: false, classBonus: false, candidates: [] });
+  const text = LMCore.formatReport({ allianceName: 'Alpha', eventTypeName: 'PvP',
+    positions: [mkPosL(0, 'p-a'), mkPosL(1, null)],
+    itemsById, playersById: PBYID, classesById: CLSBYID,
+    topSet: new Set(['p-a']), lang: 'en' });
+  assert.strictEqual(text,
+    '📜 [ALLIANCE: Alpha] LOOT DISTRIBUTION (PvP)\n' +
+    '\n' +
+    '🔹 Скриня (2 pcs) — @Andriy [Танк | TOP Contribution], [Unclaimed]\n' +
+    '\n' +
+    'Thanks everyone for participating! Items are waiting in the alliance shop.');
+});
+test('formatReport: без lang — українська за замовчуванням (регресія)', () => {
+  const itemsById = { b: mkItem('b', 'Скриня', 'common') };
+  const pos = { key: 'b#0', itemId: 'b', copyIndex: 0, winnerId: 'p-a',
+    priority: 0, rolled: false, manual: false, classBonus: false, candidates: [] };
+  const text = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X',
+    positions: [pos], itemsById, playersById: PBYID, classesById: CLSBYID,
+    topSet: new Set() });
+  assert.ok(text.includes('РОЗПОДІЛ ЗДОБИЧІ'));
+  assert.ok(text.endsWith('Дякуємо всім за участь! Предмети чекають у магазині альянсу.'));
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

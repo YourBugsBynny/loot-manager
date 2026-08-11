@@ -1,0 +1,8 @@
+# Файли сусіднього проєкту (каталог здобичі з іконками) — інша сесія веде їх у цій же теці.
+# Мій репозиторій відстежує лише loot-manager.html, tests/ і docs/.
+/README.md
+/index.html
+/data/
+/icons/
+/frames/
+/portraits/

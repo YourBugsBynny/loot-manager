@@ -149,7 +149,7 @@ const LMCore = (() => {
     scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
     historyDays: 14, wWon: 50,
     rarityWeights: Object.freeze({ common: 1, rare: 2, epic: 4, legendary: 8 }),
-    webhookUrl: ''
+    webhookUrl: '', language: 'uk'
   });
   const RARITY_RANK = Object.freeze({ common: 1, rare: 2, epic: 3, legendary: 4 });
   function uuid() {
@@ -186,7 +186,10 @@ const LMCore = (() => {
   }
 
   function migrate(db) {
-    if (db.schemaVersion === 1) return { ok: true, db };
+    if (db.schemaVersion === 1) {
+      if (db.settings && !db.settings.language) db.settings.language = 'uk'; // бекфіл v1.1
+      return { ok: true, db };
+    }
     return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
   }
 
@@ -349,9 +352,23 @@ const LMCore = (() => {
     return new Set(Object.keys(scores).filter(pid => scores[pid] === max));
   }
 
+  // v1.1: фіксовані рядки звіту трьома мовами; мова = settings.language
+  const REPORT_I18N = Object.freeze({
+    uk: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РОЗПОДІЛ ЗДОБИЧІ (' + e + ')',
+          pcs: 'шт.', top: 'ТОП Вклад', free: '[Вільний залишок]',
+          footer: 'Дякуємо всім за участь! Предмети чекають у магазині альянсу.' },
+    ru: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (' + e + ')',
+          pcs: 'шт.', top: 'ТОП Вклад', free: '[Свободный остаток]',
+          footer: 'Спасибо всем за участие! Предметы ждут в магазине альянса.' },
+    en: { header: (a, e) => '📜 [ALLIANCE: ' + a + '] LOOT DISTRIBUTION (' + e + ')',
+          pcs: 'pcs', top: 'TOP Contribution', free: '[Unclaimed]',
+          footer: 'Thanks everyone for participating! Items are waiting in the alliance shop.' }
+  });
+
   // ТЗ §6: рядок на предмет; кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
   function formatReport({ allianceName, eventTypeName, positions, itemsById,
-                          playersById, classesById, topSet }) {
+                          playersById, classesById, topSet, lang }) {
+    const L = REPORT_I18N[lang] || REPORT_I18N.uk;
     const byItem = [];       // порядок першої появи предмета
     const groups = new Map();
     for (const pos of positions) {
@@ -370,16 +387,15 @@ const LMCore = (() => {
         const cls = player && classesById[player.classId];
         const nick = player ? player.nickname : '?';
         const clsName = cls ? cls.name : '?';
-        const topMark = topSet.has(pos.winnerId) ? ' | ТОП Вклад' : '';
+        const topMark = topSet.has(pos.winnerId) ? ' | ' + L.top : '';
         entries.push('@' + nick + ' [' + clsName + topMark + ']');
       }
-      if (freeCount > 0) entries.push('[Вільний залишок]');
-      lines.push('🔹 ' + (item ? item.name : '?') + ' (' + posList.length + ' шт.) — ' +
+      if (freeCount > 0) entries.push(L.free);
+      lines.push('🔹 ' + (item ? item.name : '?') + ' (' + posList.length + ' ' + L.pcs + ') — ' +
         entries.join(', '));
     }
-    return '📜 [АЛЬЯНС: ' + allianceName + '] РОЗПОДІЛ ЗДОБИЧІ (' + eventTypeName + ')\n\n' +
-      lines.join('\n') +
-      '\n\nДякуємо всім за участь! Предмети чекають у магазині альянсу.';
+    return L.header(allianceName, eventTypeName) + '\n\n' +
+      lines.join('\n') + '\n\n' + L.footer;
   }
 
   // ТЗ §5.8, §3.3: групування позицій у записи історії зі снапшотами
@@ -427,6 +443,256 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, ch =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
+/* ===== i18n (v1.1): UI трьома мовами; мова звіту — в LMCore.REPORT_I18N ===== */
+const I18N = {
+  uk: {
+    tab1: '1. Подія та вклад', tab2: '2. Здобич і заявки', tab3: '3. Розподіл',
+    tab4: '4. Бази та налаштування', allianceTitle: 'Активний альянс',
+    lsUnavailable: m => 'LocalStorage недоступний: ' + m + '. Дані не збережуться!',
+    dbNotLoaded: e => 'База не завантажена: ' + e,
+    dbCorrupt: m => 'База пошкоджена, створено нову. Помилка: ' + m,
+    saveFail: m => 'Не вдалося зберегти (сховище переповнене?): ' + m +
+      ' Зробіть експорт JSON на вкладці 4!',
+    eventH2: 'Івент', eventPh: 'Тип івенту (напр., Вторгнення монстрів)',
+    modeLabel: 'Режим вкладу:', modeSimple: 'Простий (ТОП)', modeAdvanced: 'Розширений (числа)',
+    presenceH2: 'Присутні та вклад', allPresent: 'Всі присутні', nonePresent: 'Зняти всіх',
+    present: 'Присутній', topFlag: 'ТОП',
+    noPlayers: 'Немає активних гравців. Додайте їх на вкладці «4. Бази та налаштування».',
+    dropsH2: 'Що випало', itemPh: 'Назва предмета', pcsShort: 'шт.', add: 'Додати',
+    quickHint: 'Предмета немає в каталозі — створіть його:', qiNamePh: 'Назва',
+    fitsLabel: 'Кому підходить (порожньо = всім):', createAdd: 'Створити і додати',
+    nothingAdded: 'Поки нічого не додано.', claimsH2: 'Заявки (хто що хоче)',
+    noPresent: 'Немає присутніх гравців — позначте їх на вкладці «1. Подія та вклад».',
+    addLootFirst: 'Додайте здобич вище, щоб проставити заявки.', playerTh: 'Гравець',
+    enterItemName: 'Введіть назву предмета.', itemExists: 'Предмет із такою назвою вже існує.',
+    calc: '⚖️ Розрахувати розподіл',
+    calcHint: 'Потрібні присутні гравці (вкладка 1) і здобич (вкладка 2).',
+    resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Вільний залишок',
+    classBonusBadge: 'клас-бонус', rollBadge: '🎲 рол', manualBadge: 'ручне',
+    winnerLabel: 'Переможець:', autoOpt: '— авто —', claimantsGrp: 'Претенденти',
+    otherGrp: 'Інший присутній гравець', chatTextH2: 'Текст для чату',
+    copyBtn: '📋 Скопіювати текст', confirmBtn: '✅ Підтвердити та зберегти',
+    copied: 'Скопійовано ✓', copyFail: 'Не вдалося скопіювати — виділіть текст вручну.',
+    confirmSave: 'Зберегти розподіл в історію? Чернетку сеансу буде очищено.',
+    savedToHistory: n => 'Збережено в історію ✓ (' + n + ' записів)', defaultEvent: 'Івент',
+    sectAlliances: n => '🏰 Альянси (' + n + ')', sectPlayers: n => '👥 Гравці (' + n + ')',
+    sectItems: n => '⚔️ Предмети — спільний каталог (' + n + ')',
+    sectClasses: n => '🛡️ Класи (' + n + ')', sectEvents: n => '📅 Типи івентів (' + n + ')',
+    sectHistory: n => '📜 Історія (' + n + ')', sectSettings: '⚙️ Налаштування алгоритму',
+    sectBackup: '💾 Резервна копія', del: 'Видалити',
+    newAlliancePh: 'Назва нового альянсу', addAlliance: 'Додати альянс',
+    enterAllianceName: 'Введіть назву альянсу.',
+    allianceExists: 'Альянс із такою назвою вже існує.',
+    lastAlliance: 'Останній альянс видалити не можна.',
+    delAllianceConfirm: n => 'Видалити альянс «' + n + '» РАЗОМ з усіма його гравцями та ' +
+      'історією? Дію неможливо скасувати.',
+    thNick: 'Нік', thClass: 'Клас', thStatus: 'Статус', thActive: 'Активний',
+    nickPh: 'Нікнейм', addPlayer: 'Додати гравця', enterNick: 'Введіть нікнейм.',
+    nickExists: 'Гравець із таким ніком уже є в цьому альянсі.',
+    nickTaken: 'Такий нік уже зайнятий.',
+    playerHasHistory: 'У гравця є записи в історії — лише деактивація (зніміть галочку «Активний»).',
+    delPlayerConfirm: n => 'Видалити гравця «' + n + '»?',
+    searchCatalogPh: 'Пошук у каталозі', thName: 'Назва', thCategory: 'Категорія',
+    thRarity: 'Рідкість', thClasses: 'Класи', forAll: 'всім',
+    archive: 'Архівувати', unarchive: 'Розархівувати',
+    itemInHistory: 'Предмет фігурує в історії — доступна лише архівація.',
+    delItemConfirm: n => 'Видалити предмет «' + n + '» з каталогу?',
+    newItemHint: 'Новий предмет додається на вкладці «2. Здобич і заявки» (форма швидкого створення).',
+    classNamePh: 'Назва класу', addClass: 'Додати клас (ваги 0.8/0.1/0.1)',
+    enterClassName: 'Введіть назву класу.', classExists: 'Клас із такою назвою вже існує.',
+    classHasPlayers: 'Є гравці цього класу — доступна лише архівація.',
+    delClassConfirm: n => 'Видалити клас «' + n + '»?',
+    eventsEmpty: 'Список порожній — назви додаються автоматично при підтвердженні розподілу.',
+    allPlayersOpt: '— всі гравці —', histFrom: 'з', histTo: 'по', noRecords: 'Записів немає.',
+    histScore: s => '(бал ' + s + ')', cancelRec: 'Скасувати',
+    cancelRecConfirm: (i, n) => 'Скасувати запис «' + i + ' → ' + n +
+      '»? Він перестане впливати на анти-жадібність.',
+    setScoreTop: 'Бал «ТОП»', setScorePresent: 'Бал присутнього', setPClass: 'Клас-бонус P',
+    setKPenalty: 'Штраф історії K', setHistoryDays: 'Вікно історії, днів',
+    setWWon: 'Штраф за виграш у сеансі',
+    rarityWeightsLabel: 'Ваги рідкості в анти-жадібності:', resetDefaults: 'Скинути до дефолтів',
+    resetConfirm: 'Повернути всі константи алгоритму до значень за замовчуванням?',
+    langLabel: 'Мова інтерфейсу та звіту:',
+    exportBtn: '⬇️ Експорт JSON', importBtn: '⬆️ Імпорт JSON',
+    importHint: 'Імпорт повністю замінює базу після перевірки формату та підтвердження.',
+    notJson: m => 'Файл не є коректним JSON: ' + m,
+    importRejected: e => 'Імпорт відхилено: ' + e,
+    importConfirm: n => 'Замінити ВСЮ поточну базу вмістом файлу «' + n + '»?',
+    imported: 'Базу імпортовано ✓'
+  },
+  ru: {
+    tab1: '1. Событие и вклад', tab2: '2. Добыча и заявки', tab3: '3. Распределение',
+    tab4: '4. Базы и настройки', allianceTitle: 'Активный альянс',
+    lsUnavailable: m => 'LocalStorage недоступен: ' + m + '. Данные не сохранятся!',
+    dbNotLoaded: e => 'База не загружена: ' + e,
+    dbCorrupt: m => 'База повреждена, создана новая. Ошибка: ' + m,
+    saveFail: m => 'Не удалось сохранить (хранилище переполнено?): ' + m +
+      ' Сделайте экспорт JSON во вкладке 4!',
+    eventH2: 'Событие', eventPh: 'Тип события (напр., Вторжение монстров)',
+    modeLabel: 'Режим вклада:', modeSimple: 'Простой (ТОП)', modeAdvanced: 'Расширенный (числа)',
+    presenceH2: 'Присутствующие и вклад', allPresent: 'Все присутствуют', nonePresent: 'Снять всех',
+    present: 'Присутствует', topFlag: 'ТОП',
+    noPlayers: 'Нет активных игроков. Добавьте их во вкладке «4. Базы и настройки».',
+    dropsH2: 'Что выпало', itemPh: 'Название предмета', pcsShort: 'шт.', add: 'Добавить',
+    quickHint: 'Предмета нет в каталоге — создайте его:', qiNamePh: 'Название',
+    fitsLabel: 'Кому подходит (пусто = всем):', createAdd: 'Создать и добавить',
+    nothingAdded: 'Пока ничего не добавлено.', claimsH2: 'Заявки (кто что хочет)',
+    noPresent: 'Нет присутствующих игроков — отметьте их во вкладке «1. Событие и вклад».',
+    addLootFirst: 'Добавьте добычу выше, чтобы проставить заявки.', playerTh: 'Игрок',
+    enterItemName: 'Введите название предмета.', itemExists: 'Предмет с таким названием уже существует.',
+    calc: '⚖️ Рассчитать распределение',
+    calcHint: 'Нужны присутствующие игроки (вкладка 1) и добыча (вкладка 2).',
+    resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Свободный остаток',
+    classBonusBadge: 'класс-бонус', rollBadge: '🎲 ролл', manualBadge: 'ручное',
+    winnerLabel: 'Победитель:', autoOpt: '— авто —', claimantsGrp: 'Претенденты',
+    otherGrp: 'Другой присутствующий игрок', chatTextH2: 'Текст для чата',
+    copyBtn: '📋 Скопировать текст', confirmBtn: '✅ Подтвердить и сохранить',
+    copied: 'Скопировано ✓', copyFail: 'Не удалось скопировать — выделите текст вручную.',
+    confirmSave: 'Сохранить распределение в историю? Черновик сеанса будет очищен.',
+    savedToHistory: n => 'Сохранено в историю ✓ (' + n + ' записей)', defaultEvent: 'Событие',
+    sectAlliances: n => '🏰 Альянсы (' + n + ')', sectPlayers: n => '👥 Игроки (' + n + ')',
+    sectItems: n => '⚔️ Предметы — общий каталог (' + n + ')',
+    sectClasses: n => '🛡️ Классы (' + n + ')', sectEvents: n => '📅 Типы событий (' + n + ')',
+    sectHistory: n => '📜 История (' + n + ')', sectSettings: '⚙️ Настройки алгоритма',
+    sectBackup: '💾 Резервная копия', del: 'Удалить',
+    newAlliancePh: 'Название нового альянса', addAlliance: 'Добавить альянс',
+    enterAllianceName: 'Введите название альянса.',
+    allianceExists: 'Альянс с таким названием уже существует.',
+    lastAlliance: 'Последний альянс удалить нельзя.',
+    delAllianceConfirm: n => 'Удалить альянс «' + n + '» ВМЕСТЕ со всеми его игроками и ' +
+      'историей? Действие нельзя отменить.',
+    thNick: 'Ник', thClass: 'Класс', thStatus: 'Статус', thActive: 'Активен',
+    nickPh: 'Никнейм', addPlayer: 'Добавить игрока', enterNick: 'Введите никнейм.',
+    nickExists: 'Игрок с таким ником уже есть в этом альянсе.',
+    nickTaken: 'Такой ник уже занят.',
+    playerHasHistory: 'У игрока есть записи в истории — только деактивация (снимите галочку «Активен»).',
+    delPlayerConfirm: n => 'Удалить игрока «' + n + '»?',
+    searchCatalogPh: 'Поиск в каталоге', thName: 'Название', thCategory: 'Категория',
+    thRarity: 'Редкость', thClasses: 'Классы', forAll: 'всем',
+    archive: 'Архивировать', unarchive: 'Разархивировать',
+    itemInHistory: 'Предмет фигурирует в истории — доступна только архивация.',
+    delItemConfirm: n => 'Удалить предмет «' + n + '» из каталога?',
+    newItemHint: 'Новый предмет добавляется во вкладке «2. Добыча и заявки» (форма быстрого создания).',
+    classNamePh: 'Название класса', addClass: 'Добавить класс (веса 0.8/0.1/0.1)',
+    enterClassName: 'Введите название класса.', classExists: 'Класс с таким названием уже существует.',
+    classHasPlayers: 'Есть игроки этого класса — доступна только архивация.',
+    delClassConfirm: n => 'Удалить класс «' + n + '»?',
+    eventsEmpty: 'Список пуст — названия добавляются автоматически при подтверждении распределения.',
+    allPlayersOpt: '— все игроки —', histFrom: 'с', histTo: 'по', noRecords: 'Записей нет.',
+    histScore: s => '(балл ' + s + ')', cancelRec: 'Отменить',
+    cancelRecConfirm: (i, n) => 'Отменить запись «' + i + ' → ' + n +
+      '»? Она перестанет влиять на анти-жадность.',
+    setScoreTop: 'Балл «ТОП»', setScorePresent: 'Балл присутствующего', setPClass: 'Класс-бонус P',
+    setKPenalty: 'Штраф истории K', setHistoryDays: 'Окно истории, дней',
+    setWWon: 'Штраф за выигрыш в сеансе',
+    rarityWeightsLabel: 'Веса редкости в анти-жадности:', resetDefaults: 'Сбросить к дефолтам',
+    resetConfirm: 'Вернуть все константы алгоритма к значениям по умолчанию?',
+    langLabel: 'Язык интерфейса и отчёта:',
+    exportBtn: '⬇️ Экспорт JSON', importBtn: '⬆️ Импорт JSON',
+    importHint: 'Импорт полностью заменяет базу после проверки формата и подтверждения.',
+    notJson: m => 'Файл не является корректным JSON: ' + m,
+    importRejected: e => 'Импорт отклонён: ' + e,
+    importConfirm: n => 'Заменить ВСЮ текущую базу содержимым файла «' + n + '»?',
+    imported: 'База импортирована ✓'
+  },
+  en: {
+    tab1: '1. Event & Contribution', tab2: '2. Loot & Claims', tab3: '3. Distribution',
+    tab4: '4. Data & Settings', allianceTitle: 'Active alliance',
+    lsUnavailable: m => 'LocalStorage is unavailable: ' + m + '. Data will not be saved!',
+    dbNotLoaded: e => 'Database not loaded: ' + e,
+    dbCorrupt: m => 'Database was corrupted, a new one was created. Error: ' + m,
+    saveFail: m => 'Failed to save (storage full?): ' + m + ' Export JSON on tab 4!',
+    eventH2: 'Event', eventPh: 'Event type (e.g., Monster Invasion)',
+    modeLabel: 'Contribution mode:', modeSimple: 'Simple (TOP)', modeAdvanced: 'Advanced (numbers)',
+    presenceH2: 'Attendance & contribution', allPresent: 'All present', nonePresent: 'Clear all',
+    present: 'Present', topFlag: 'TOP',
+    noPlayers: 'No active players. Add them on the "4. Data & Settings" tab.',
+    dropsH2: 'Drops', itemPh: 'Item name', pcsShort: 'pcs', add: 'Add',
+    quickHint: 'Item is not in the catalog — create it:', qiNamePh: 'Name',
+    fitsLabel: 'Fits classes (empty = all):', createAdd: 'Create & add',
+    nothingAdded: 'Nothing added yet.', claimsH2: 'Claims (who wants what)',
+    noPresent: 'No present players — mark them on the "1. Event & Contribution" tab.',
+    addLootFirst: 'Add loot above to set claims.', playerTh: 'Player',
+    enterItemName: 'Enter an item name.', itemExists: 'An item with this name already exists.',
+    calc: '⚖️ Calculate distribution',
+    calcHint: 'Need present players (tab 1) and loot (tab 2).',
+    resultH2: 'Result', copyN: n => 'copy ' + n, freeLeft: 'Unclaimed',
+    classBonusBadge: 'class bonus', rollBadge: '🎲 roll', manualBadge: 'manual',
+    winnerLabel: 'Winner:', autoOpt: '— auto —', claimantsGrp: 'Claimants',
+    otherGrp: 'Other present player', chatTextH2: 'Chat text',
+    copyBtn: '📋 Copy text', confirmBtn: '✅ Confirm & save',
+    copied: 'Copied ✓', copyFail: 'Copy failed — select the text manually.',
+    confirmSave: 'Save this distribution to history? The session draft will be cleared.',
+    savedToHistory: n => 'Saved to history ✓ (' + n + ' records)', defaultEvent: 'Event',
+    sectAlliances: n => '🏰 Alliances (' + n + ')', sectPlayers: n => '👥 Players (' + n + ')',
+    sectItems: n => '⚔️ Items — shared catalog (' + n + ')',
+    sectClasses: n => '🛡️ Classes (' + n + ')', sectEvents: n => '📅 Event types (' + n + ')',
+    sectHistory: n => '📜 History (' + n + ')', sectSettings: '⚙️ Algorithm settings',
+    sectBackup: '💾 Backup', del: 'Delete',
+    newAlliancePh: 'New alliance name', addAlliance: 'Add alliance',
+    enterAllianceName: 'Enter an alliance name.',
+    allianceExists: 'An alliance with this name already exists.',
+    lastAlliance: 'The last alliance cannot be deleted.',
+    delAllianceConfirm: n => 'Delete alliance "' + n + '" TOGETHER with all its players and ' +
+      'history? This cannot be undone.',
+    thNick: 'Nickname', thClass: 'Class', thStatus: 'Role', thActive: 'Active',
+    nickPh: 'Nickname', addPlayer: 'Add player', enterNick: 'Enter a nickname.',
+    nickExists: 'A player with this nickname already exists in this alliance.',
+    nickTaken: 'This nickname is taken.',
+    playerHasHistory: 'This player has history records — deactivate instead (uncheck "Active").',
+    delPlayerConfirm: n => 'Delete player "' + n + '"?',
+    searchCatalogPh: 'Search the catalog', thName: 'Name', thCategory: 'Category',
+    thRarity: 'Rarity', thClasses: 'Classes', forAll: 'all',
+    archive: 'Archive', unarchive: 'Unarchive',
+    itemInHistory: 'This item appears in history — only archiving is available.',
+    delItemConfirm: n => 'Delete item "' + n + '" from the catalog?',
+    newItemHint: 'New items are added on the "2. Loot & Claims" tab (quick-create form).',
+    classNamePh: 'Class name', addClass: 'Add class (weights 0.8/0.1/0.1)',
+    enterClassName: 'Enter a class name.', classExists: 'A class with this name already exists.',
+    classHasPlayers: 'Players use this class — only archiving is available.',
+    delClassConfirm: n => 'Delete class "' + n + '"?',
+    eventsEmpty: 'The list is empty — names are added automatically when a distribution is confirmed.',
+    allPlayersOpt: '— all players —', histFrom: 'from', histTo: 'to', noRecords: 'No records.',
+    histScore: s => '(score ' + s + ')', cancelRec: 'Cancel',
+    cancelRecConfirm: (i, n) => 'Cancel the record "' + i + ' → ' + n +
+      '"? It will stop affecting anti-greed.',
+    setScoreTop: '"TOP" score', setScorePresent: 'Present score', setPClass: 'Class bonus P',
+    setKPenalty: 'History penalty K', setHistoryDays: 'History window, days',
+    setWWon: 'Penalty per session win',
+    rarityWeightsLabel: 'Rarity weights in anti-greed:', resetDefaults: 'Reset to defaults',
+    resetConfirm: 'Reset all algorithm constants to their defaults?',
+    langLabel: 'Interface & report language:',
+    exportBtn: '⬇️ Export JSON', importBtn: '⬆️ Import JSON',
+    importHint: 'Import fully replaces the database after format validation and confirmation.',
+    notJson: m => 'The file is not valid JSON: ' + m,
+    importRejected: e => 'Import rejected: ' + e,
+    importConfirm: n => 'Replace the ENTIRE current database with the contents of "' + n + '"?',
+    imported: 'Database imported ✓'
+  }
+};
+const LANG_NAMES = { uk: 'Українська', ru: 'Русский', en: 'English' };
+function lang() { return (db && db.settings && db.settings.language) || 'uk'; }
+function t(key, ...args) {
+  const v = (I18N[lang()] && I18N[lang()][key]) !== undefined
+    ? I18N[lang()][key] : I18N.uk[key];
+  return typeof v === 'function' ? v(...args) : (v !== undefined ? v : key);
+}
+const ROLE_LABELS = { 'Офіцер': { uk: 'Офіцер', ru: 'Офицер', en: 'Officer' },
+  'Ветеран': { uk: 'Ветеран', ru: 'Ветеран', en: 'Veteran' },
+  'Учасник': { uk: 'Учасник', ru: 'Участник', en: 'Member' } };
+const CAT_LABELS = { 'Зброя': { uk: 'Зброя', ru: 'Оружие', en: 'Weapon' },
+  'Броня': { uk: 'Броня', ru: 'Броня', en: 'Armor' },
+  'Біжутерія': { uk: 'Біжутерія', ru: 'Бижутерия', en: 'Jewelry' },
+  'Ресурси': { uk: 'Ресурси', ru: 'Ресурсы', en: 'Resources' },
+  'Інше': { uk: 'Інше', ru: 'Прочее', en: 'Other' } };
+const RARITY_LABELS = { common: { uk: 'Звичайний', ru: 'Обычный', en: 'Common' },
+  rare: { uk: 'Рідкісний', ru: 'Редкий', en: 'Rare' },
+  epic: { uk: 'Епічний', ru: 'Эпический', en: 'Epic' },
+  legendary: { uk: 'Легендарний', ru: 'Легендарный', en: 'Legendary' } };
+function roleLabel(v) { return (ROLE_LABELS[v] && ROLE_LABELS[v][lang()]) || v; }
+function catLabel(v) { return (CAT_LABELS[v] && CAT_LABELS[v][lang()]) || v; }
+function rarityLabel(v) { return (RARITY_LABELS[v] && RARITY_LABELS[v][lang()]) || v; }
+
 function banner(msg) {
   const el = document.getElementById('banner');
   document.getElementById('bannerMsg').textContent = msg;
@@ -437,24 +703,21 @@ function banner(msg) {
 function load() {
   let raw = null;
   try { raw = localStorage.getItem(STORAGE_KEY); }
-  catch (e) { banner('LocalStorage недоступний: ' + e.message + '. Дані не збережуться!'); }
+  catch (e) { banner(t('lsUnavailable', e.message)); }
   if (!raw) return LMCore.emptyDb(nowISO());
   try {
     const parsed = JSON.parse(raw);
     const mig = LMCore.migrate(parsed);
-    if (!mig.ok) { banner('База не завантажена: ' + mig.error); return LMCore.emptyDb(nowISO()); }
+    if (!mig.ok) { banner(t('dbNotLoaded', mig.error)); return LMCore.emptyDb(nowISO()); }
     return mig.db;
   } catch (e) {
-    banner('База пошкоджена, створено нову. Помилка: ' + e.message);
+    banner(t('dbCorrupt', e.message));
     return LMCore.emptyDb(nowISO());
   }
 }
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
-  catch (e) {
-    banner('Не вдалося зберегти (сховище переповнене?): ' + e.message +
-      ' Зробіть експорт JSON на вкладці 4!');
-  }
+  catch (e) { banner(t('saveFail', e.message)); }
 }
 
 /* ===== Стан ===== */
@@ -481,6 +744,12 @@ function renderHeader() {
   sel.innerHTML = db.alliances.map(a =>
     '<option value="' + a.id + '"' + (a.id === db.activeAllianceId ? ' selected' : '') + '>' +
     escapeHtml(a.name) + '</option>').join('');
+  sel.title = t('allianceTitle');
+  document.documentElement.lang = lang();
+  document.getElementById('btnSettings').title = t('tab4');
+  document.querySelectorAll('nav.tabs .tab').forEach(b => {
+    b.textContent = t('tab' + b.dataset.tab);
+  });
 }
 function switchTab(n) {
   ui.activeTab = n;
@@ -499,47 +768,47 @@ function renderTab1() {
   const d = draft();
   const players = pa().players.filter(p => p.isActive);
   const rosterHtml = players.length === 0
-    ? '<p class="muted">Немає активних гравців. Додайте їх на вкладці «4. Бази та налаштування».</p>'
+    ? '<p class="muted">' + t('noPlayers') + '</p>'
     : players.map(p => {
         const pr = d.presence[p.id] || {};
         const present = !!pr.present;
         const dis = present ? '' : ' disabled';
         const controls = d.mode === 'simple'
           ? '<label class="inline"><input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
-            (pr.top ? ' checked' : '') + dis + '> ТОП</label>'
+            (pr.top ? ' checked' : '') + dis + '> ' + t('topFlag') + '</label>'
           : '<span class="metrics">' + [['damage', 'Damage'], ['taken', 'Taken'], ['heal', 'Heal']]
               .map(([k, t]) => '<label>' + t + '<input type="number" min="0" step="1" class="inpMetric" ' +
                 'data-pid="' + p.id + '" data-metric="' + k + '" value="' +
                 (pr[k] > 0 ? pr[k] : '') + '"' + dis + '></label>').join('') + '</span>';
         return '<div class="roster-row' + (present ? '' : ' absent') + '">' +
           '<label class="inline"><input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
-          (present ? ' checked' : '') + '> Присутній</label>' +
+          (present ? ' checked' : '') + '> ' + t('present') + '</label>' +
           '<span class="nick">' + escapeHtml(p.nickname) + '</span>' +
           '<span class="muted small">' + escapeHtml(className(p.classId)) + '</span>' +
           controls + '</div>';
       }).join('');
   document.getElementById('tab1').innerHTML =
     '<div class="card">' +
-      '<h2>Івент</h2>' +
+      '<h2>' + t('eventH2') + '</h2>' +
       '<div class="row">' +
         '<input type="text" id="eventTypeInput" class="grow" list="eventTypeList" ' +
-          'placeholder="Тип івенту (напр., Вторгнення монстрів)" value="' +
+          'placeholder="' + t('eventPh') + '" value="' +
           escapeHtml(d.eventTypeName) + '" maxlength="60">' +
-        '<datalist id="eventTypeList">' + pa().eventTypes.map(t =>
-          '<option value="' + escapeHtml(t) + '">').join('') + '</datalist>' +
+        '<datalist id="eventTypeList">' + pa().eventTypes.map(ev =>
+          '<option value="' + escapeHtml(ev) + '">').join('') + '</datalist>' +
       '</div>' +
       '<div class="row" style="margin-top:8px">' +
-        '<span class="muted small">Режим вкладу:</span>' +
+        '<span class="muted small">' + t('modeLabel') + '</span>' +
         '<label class="inline"><input type="radio" name="mode" id="modeSimple" value="simple"' +
-          (d.mode === 'simple' ? ' checked' : '') + '> Простий (ТОП)</label>' +
+          (d.mode === 'simple' ? ' checked' : '') + '> ' + t('modeSimple') + '</label>' +
         '<label class="inline"><input type="radio" name="mode" id="modeAdvanced" value="advanced"' +
-          (d.mode === 'advanced' ? ' checked' : '') + '> Розширений (числа)</label>' +
+          (d.mode === 'advanced' ? ' checked' : '') + '> ' + t('modeAdvanced') + '</label>' +
       '</div>' +
     '</div>' +
     '<div class="card">' +
-      '<div class="row"><h2 class="grow">Присутні та вклад</h2>' +
-        '<button class="btn btn-sm" id="btnAllPresent">Всі присутні</button>' +
-        '<button class="btn btn-sm" id="btnNonePresent">Зняти всіх</button></div>' +
+      '<div class="row"><h2 class="grow">' + t('presenceH2') + '</h2>' +
+        '<button class="btn btn-sm" id="btnAllPresent">' + t('allPresent') + '</button>' +
+        '<button class="btn btn-sm" id="btnNonePresent">' + t('nonePresent') + '</button></div>' +
       rosterHtml +
     '</div>';
 
@@ -586,11 +855,10 @@ function className(classId) {
   return c ? c.name : '—';
 }
 /* ===== Вкладка 2: Здобич і заявки (ТЗ §4.3) ===== */
-const RARITY_UA = { common: 'Звичайний', rare: 'Рідкісний', epic: 'Епічний', legendary: 'Легендарний' };
-const CATEGORIES = ['Зброя', 'Броня', 'Біжутерія', 'Ресурси', 'Інше'];
+const CATEGORIES = ['Зброя', 'Броня', 'Біжутерія', 'Ресурси', 'Інше']; // канонічні значення в базі
 
 function rarityBadge(rarity) {
-  return '<span class="badge ' + rarity + '">' + (RARITY_UA[rarity] || rarity) + '</span>';
+  return '<span class="badge ' + rarity + '">' + rarityLabel(rarity) + '</span>';
 }
 function presentPlayers() {
   const d = draft();
@@ -611,12 +879,12 @@ function renderTab2() {
   const itemsById = byId(db.items);
   const present = presentPlayers();
   const dropRows = d.drops.length === 0
-    ? '<p class="muted">Поки нічого не додано.</p>'
+    ? '<p class="muted">' + t('nothingAdded') + '</p>'
     : d.drops.map(dr => {
         const it = itemsById[dr.itemId];
         return '<div class="roster-row"><span class="grow">' + escapeHtml(it ? it.name : '?') +
           ' ' + (it ? rarityBadge(it.rarity) : '') + '</span>' +
-          '<label class="inline small">шт. <input type="number" min="1" step="1" class="inpDropQty" ' +
+          '<label class="inline small">' + t('pcsShort') + ' <input type="number" min="1" step="1" class="inpDropQty" ' +
             'data-iid="' + dr.itemId + '" value="' + dr.quantity + '"></label>' +
           '<button class="btn btn-sm btn-danger btnDropDel" data-iid="' + dr.itemId + '">✕</button></div>';
       }).join('');
@@ -624,14 +892,14 @@ function renderTab2() {
   const dropItems = d.drops.map(dr => itemsById[dr.itemId]).filter(Boolean);
   let claimsHtml;
   if (present.length === 0) {
-    claimsHtml = '<p class="muted">Немає присутніх гравців — позначте їх на вкладці «1. Подія та вклад».</p>';
+    claimsHtml = '<p class="muted">' + t('noPresent') + '</p>';
   } else if (dropItems.length === 0) {
-    claimsHtml = '<p class="muted">Додайте здобич вище, щоб проставити заявки.</p>';
+    claimsHtml = '<p class="muted">' + t('addLootFirst') + '</p>';
   } else {
     const chk = (pid, iid) => '<input type="checkbox" class="chkClaim" data-pid="' + pid +
       '" data-iid="' + iid + '"' + (claimsOf(pid).includes(iid) ? ' checked' : '') + '>';
     claimsHtml =
-      '<div class="claims-table table-wrap"><table><thead><tr><th>Гравець</th>' +
+      '<div class="claims-table table-wrap"><table><thead><tr><th>' + t('playerTh') + '</th>' +
       dropItems.map(it => '<th>' + escapeHtml(it.name) + '</th>').join('') +
       '</tr></thead><tbody>' +
       present.map(p => '<tr><td><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
@@ -648,38 +916,41 @@ function renderTab2() {
 
   document.getElementById('tab2').innerHTML =
     '<div class="card">' +
-      '<h2>Що випало</h2>' +
+      '<h2>' + t('dropsH2') + '</h2>' +
       '<div class="row">' +
-        '<input type="text" id="itemSearch" class="grow" list="itemSearchList" placeholder="Назва предмета">' +
+        '<input type="text" id="itemSearch" class="grow" list="itemSearchList" placeholder="' +
+          t('itemPh') + '">' +
         '<datalist id="itemSearchList">' + db.items.filter(i => !i.isArchived).map(i =>
           '<option value="' + escapeHtml(i.name) + '">').join('') + '</datalist>' +
-        '<label class="inline small">шт. <input type="number" id="inpQty" min="1" step="1" value="1"></label>' +
-        '<button class="btn btn-primary" id="btnAddDrop">Додати</button>' +
+        '<label class="inline small">' + t('pcsShort') +
+          ' <input type="number" id="inpQty" min="1" step="1" value="1"></label>' +
+        '<button class="btn btn-primary" id="btnAddDrop">' + t('add') + '</button>' +
       '</div>' +
       '<div id="quickItemForm" hidden style="margin-top:10px; border-top:1px dashed var(--line); padding-top:10px">' +
-        '<p class="small muted">Предмета немає в каталозі — створіть його:</p>' +
+        '<p class="small muted">' + t('quickHint') + '</p>' +
         '<div class="row">' +
-          '<input type="text" id="qiName" class="grow" placeholder="Назва">' +
-          '<select id="qiCategory">' + CATEGORIES.map(c => '<option>' + c + '</option>').join('') + '</select>' +
-          '<select id="qiRarity">' + Object.entries(RARITY_UA).map(([v, t]) =>
-            '<option value="' + v + '">' + t + '</option>').join('') + '</select>' +
+          '<input type="text" id="qiName" class="grow" placeholder="' + t('qiNamePh') + '">' +
+          '<select id="qiCategory">' + CATEGORIES.map(c =>
+            '<option value="' + c + '">' + catLabel(c) + '</option>').join('') + '</select>' +
+          '<select id="qiRarity">' + Object.keys(RARITY_LABELS).map(v =>
+            '<option value="' + v + '">' + rarityLabel(v) + '</option>').join('') + '</select>' +
         '</div>' +
         '<div class="row" style="margin-top:6px">' +
-          '<span class="small muted">Кому підходить (порожньо = всім):</span>' +
+          '<span class="small muted">' + t('fitsLabel') + '</span>' +
           db.classes.filter(c => !c.isArchived).map(c =>
             '<label class="inline small"><input type="checkbox" class="qiClass" value="' + c.id + '"> ' +
             escapeHtml(c.name) + '</label>').join('') +
-          '<button class="btn btn-primary btn-sm" id="btnQuickCreate">Створити і додати</button>' +
+          '<button class="btn btn-primary btn-sm" id="btnQuickCreate">' + t('createAdd') + '</button>' +
         '</div>' +
       '</div>' +
       '<div style="margin-top:10px">' + dropRows + '</div>' +
     '</div>' +
-    '<div class="card"><h2>Заявки (хто що хоче)</h2>' + claimsHtml + '</div>';
+    '<div class="card"><h2>' + t('claimsH2') + '</h2>' + claimsHtml + '</div>';
 
   const tab = document.getElementById('tab2');
   tab.querySelector('#btnAddDrop').addEventListener('click', () => {
     const name = tab.querySelector('#itemSearch').value.trim();
-    if (!name) { banner('Введіть назву предмета.'); return; }
+    if (!name) { banner(t('enterItemName')); return; }
     const item = db.items.find(i =>
       i.name.toLowerCase() === name.toLowerCase() && !i.isArchived);
     if (!item) {
@@ -692,9 +963,9 @@ function renderTab2() {
   });
   tab.querySelector('#btnQuickCreate').addEventListener('click', () => {
     const name = tab.querySelector('#qiName').value.trim();
-    if (!name) { banner('Введіть назву предмета.'); return; }
+    if (!name) { banner(t('enterItemName')); return; }
     if (db.items.some(i => i.name.toLowerCase() === name.toLowerCase())) {
-      banner('Предмет із такою назвою вже існує.'); return;
+      banner(t('itemExists')); return;
     }
     const item = {
       id: LMCore.uuid(), name,
@@ -778,9 +1049,9 @@ function renderTab3() {
       const item = itemsById[pos.itemId];
       const winner = pos.winnerId ? playersById[pos.winnerId] : null;
       const badges =
-        (pos.classBonus ? ' <span class="badge info">клас-бонус</span>' : '') +
-        (pos.rolled ? ' <span class="badge plain">🎲 рол</span>' : '') +
-        (pos.manual ? ' <span class="badge plain">ручне</span>' : '');
+        (pos.classBonus ? ' <span class="badge info">' + t('classBonusBadge') + '</span>' : '') +
+        (pos.rolled ? ' <span class="badge plain">' + t('rollBadge') + '</span>' : '') +
+        (pos.manual ? ' <span class="badge plain">' + t('manualBadge') + '</span>' : '');
       const candOpts = pos.candidates.map(c =>
         '<option value="' + c.playerId + '"' + (c.playerId === pos.winnerId ? ' selected' : '') + '>' +
         escapeHtml(playersById[c.playerId] ? playersById[c.playerId].nickname : '?') +
@@ -792,37 +1063,37 @@ function renderTab3() {
       return '<div class="pos-row"><div class="pos-head">' +
         '<b>' + escapeHtml(item ? item.name : '?') + '</b> ' +
         (item ? rarityBadge(item.rarity) : '') +
-        ' <span class="muted small">штука ' + (pos.copyIndex + 1) + '</span>' +
+        ' <span class="muted small">' + t('copyN', pos.copyIndex + 1) + '</span>' +
         (winner
           ? ' → <b>' + escapeHtml(winner.nickname) + '</b>' +
             (pos.priority !== null ? ' <span class="muted small">(' + fmt(pos.priority) + ')</span>' : '')
-          : ' → <span class="muted">Вільний залишок</span>') +
+          : ' → <span class="muted">' + t('freeLeft') + '</span>') +
         badges + '</div>' +
-        '<div class="row small" style="margin-top:4px"><span class="muted">Переможець:</span>' +
+        '<div class="row small" style="margin-top:4px"><span class="muted">' + t('winnerLabel') + '</span>' +
         '<select class="winnerSelect" data-key="' + pos.key + '">' +
-          '<option value=""' + (pos.manual ? '' : ' selected') + '>— авто —</option>' +
-          (candOpts ? '<optgroup label="Претенденти">' + candOpts + '</optgroup>' : '') +
-          (otherOpts ? '<optgroup label="Інший присутній гравець">' + otherOpts + '</optgroup>' : '') +
+          '<option value=""' + (pos.manual ? '' : ' selected') + '>' + t('autoOpt') + '</option>' +
+          (candOpts ? '<optgroup label="' + t('claimantsGrp') + '">' + candOpts + '</optgroup>' : '') +
+          (otherOpts ? '<optgroup label="' + t('otherGrp') + '">' + otherOpts + '</optgroup>' : '') +
         '</select></div></div>';
     }).join('');
     const reportText = LMCore.formatReport({
-      allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || 'Івент',
-      positions, itemsById, playersById, classesById: byId(db.classes), topSet });
+      allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || t('defaultEvent'),
+      positions, itemsById, playersById, classesById: byId(db.classes), topSet, lang: lang() });
     resultHtml =
-      '<div class="card"><h2>Результат</h2>' + rows + '</div>' +
-      '<div class="card"><h2>Текст для чату</h2>' +
+      '<div class="card"><h2>' + t('resultH2') + '</h2>' + rows + '</div>' +
+      '<div class="card"><h2>' + t('chatTextH2') + '</h2>' +
         '<textarea id="reportText" rows="10" readonly>' + escapeHtml(reportText) + '</textarea>' +
         '<div class="row" style="margin-top:8px">' +
-          '<button class="btn" id="btnCopy">📋 Скопіювати текст</button>' +
-          '<button class="btn btn-primary" id="btnConfirm">✅ Підтвердити та зберегти</button>' +
+          '<button class="btn" id="btnCopy">' + t('copyBtn') + '</button>' +
+          '<button class="btn btn-primary" id="btnConfirm">' + t('confirmBtn') + '</button>' +
         '</div></div>';
   }
 
   document.getElementById('tab3').innerHTML =
     '<div class="card"><div class="row">' +
       '<button class="btn btn-primary" id="btnCalc"' + (canCalc ? '' : ' disabled') +
-        '>⚖️ Розрахувати розподіл</button>' +
-      (canCalc ? '' : '<span class="muted small">Потрібні присутні гравці (вкладка 1) і здобич (вкладка 2).</span>') +
+        '>' + t('calc') + '</button>' +
+      (canCalc ? '' : '<span class="muted small">' + t('calcHint') + '</span>') +
     '</div></div>' + resultHtml;
 
   const tab = document.getElementById('tab3');
@@ -847,21 +1118,21 @@ function renderTab3() {
       save(); renderTab3();
     }));
   tab.querySelector('#btnCopy')?.addEventListener('click', async () => {
-    const t = tab.querySelector('#reportText');
-    try { await navigator.clipboard.writeText(t.value); banner('Скопійовано ✓'); }
+    const ta = tab.querySelector('#reportText');
+    try { await navigator.clipboard.writeText(ta.value); banner(t('copied')); }
     catch (err) {
-      t.focus(); t.select();
-      banner(document.execCommand('copy') ? 'Скопійовано ✓' : 'Не вдалося скопіювати — виділіть текст вручну.');
+      ta.focus(); ta.select();
+      banner(document.execCommand('copy') ? t('copied') : t('copyFail'));
     }
   });
   tab.querySelector('#btnConfirm')?.addEventListener('click', async () => {
     if (!ui.calcResult) return;
-    if (!confirm('Зберегти розподіл в історію? Чернетку сеансу буде очищено.')) return;
+    if (!confirm(t('confirmSave'))) return;
     const d2 = draft();
     const records = LMCore.buildRecords({
       positions: ui.calcResult.positions, itemsById: byId(db.items),
       playersById: byId(pa().players), scores: ui.calcResult.scores,
-      nowISO: nowISO(), eventTypeName: d2.eventTypeName || 'Івент' });
+      nowISO: nowISO(), eventTypeName: d2.eventTypeName || t('defaultEvent') });
     pa().history.push(...records);
     const evName = (d2.eventTypeName || '').trim();
     if (evName && !pa().eventTypes.includes(evName)) pa().eventTypes.push(evName);
@@ -870,7 +1141,7 @@ function renderTab3() {
     ui.calcResult = null;
     save();
     try { await notificationService.send(text); } catch (err) { /* Етап 2 */ }
-    banner('Збережено в історію ✓ (' + records.length + ' записів)');
+    banner(t('savedToHistory', records.length));
     renderTab3();
   });
 }
@@ -903,65 +1174,73 @@ function renderTab4() {
     db.alliances.map(a => '<div class="roster-row">' +
       '<input type="text" class="inpAllianceName grow" data-aid="' + a.id + '" value="' +
         escapeHtml(a.name) + '" maxlength="40">' +
-      '<button class="btn btn-sm btn-danger btnDelAlliance" data-aid="' + a.id + '">Видалити</button>' +
+      '<button class="btn btn-sm btn-danger btnDelAlliance" data-aid="' + a.id + '">' +
+        t('del') + '</button>' +
       '</div>').join('') +
     '<div class="row" style="margin-top:8px">' +
-      '<input type="text" id="inpNewAlliance" class="grow" placeholder="Назва нового альянсу" maxlength="40">' +
-      '<button class="btn btn-primary btn-sm" id="btnAddAlliance">Додати альянс</button></div>';
+      '<input type="text" id="inpNewAlliance" class="grow" placeholder="' + t('newAlliancePh') +
+        '" maxlength="40">' +
+      '<button class="btn btn-primary btn-sm" id="btnAddAlliance">' + t('addAlliance') + '</button></div>';
 
   /* — Гравці — */
+  const roleOpts = sel => ROLES.map(r => '<option value="' + r + '"' +
+    (r === sel ? ' selected' : '') + '>' + roleLabel(r) + '</option>').join('');
   const playersHtml =
-    '<div class="table-wrap"><table><thead><tr><th>Нік</th><th>Клас</th><th>Статус</th><th>Активний</th><th></th></tr></thead><tbody>' +
+    '<div class="table-wrap"><table><thead><tr><th>' + t('thNick') + '</th><th>' + t('thClass') +
+      '</th><th>' + t('thStatus') + '</th><th>' + t('thActive') + '</th><th></th></tr></thead><tbody>' +
     paData.players.map(p => '<tr' + (p.isActive ? '' : ' class="cancelled"') + '>' +
       '<td><input type="text" class="inpNick" data-pid="' + p.id + '" value="' +
         escapeHtml(p.nickname) + '" maxlength="30" style="width:130px"></td>' +
       '<td><select class="selClass" data-pid="' + p.id + '">' + clsOptions(p.classId) + '</select></td>' +
-      '<td><select class="selRole" data-pid="' + p.id + '">' + ROLES.map(r =>
-        '<option' + (r === p.role ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></td>' +
+      '<td><select class="selRole" data-pid="' + p.id + '">' + roleOpts(p.role) + '</select></td>' +
       '<td><input type="checkbox" class="chkActive" data-pid="' + p.id + '"' +
         (p.isActive ? ' checked' : '') + '></td>' +
       '<td><button class="btn btn-sm btn-danger btnDelPlayer" data-pid="' + p.id + '">✕</button></td>' +
       '</tr>').join('') +
     '</tbody></table></div>' +
     '<div class="row" style="margin-top:8px">' +
-      '<input type="text" id="inpNewNick" placeholder="Нікнейм" maxlength="30" class="grow">' +
+      '<input type="text" id="inpNewNick" placeholder="' + t('nickPh') + '" maxlength="30" class="grow">' +
       '<select id="selNewClass">' + clsOptions(null) + '</select>' +
-      '<select id="selNewRole">' + ROLES.map(r =>
-        '<option' + (r === 'Учасник' ? ' selected' : '') + '>' + r + '</option>').join('') + '</select>' +
-      '<button class="btn btn-primary btn-sm" id="btnAddPlayer">Додати гравця</button></div>';
+      '<select id="selNewRole">' + roleOpts('Учасник') + '</select>' +
+      '<button class="btn btn-primary btn-sm" id="btnAddPlayer">' + t('addPlayer') + '</button></div>';
 
   /* — Предмети — */
   const itemFilter = (ui.itemFilter || '').toLowerCase();
   const itemsShown = db.items.filter(i => !itemFilter || i.name.toLowerCase().includes(itemFilter));
   const itemsHtml =
-    '<div class="row"><input type="search" id="inpItemFilter" class="grow" placeholder="Пошук у каталозі" value="' +
-      escapeHtml(ui.itemFilter || '') + '"></div>' +
-    '<div class="table-wrap"><table><thead><tr><th>Назва</th><th>Категорія</th><th>Рідкість</th><th>Класи</th><th></th></tr></thead><tbody>' +
+    '<div class="row"><input type="search" id="inpItemFilter" class="grow" placeholder="' +
+      t('searchCatalogPh') + '" value="' + escapeHtml(ui.itemFilter || '') + '"></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>' + t('thName') + '</th><th>' + t('thCategory') +
+      '</th><th>' + t('thRarity') + '</th><th>' + t('thClasses') + '</th><th></th></tr></thead><tbody>' +
     itemsShown.map(i => '<tr' + (i.isArchived ? ' class="cancelled"' : '') + '>' +
       '<td><input type="text" class="inpItemName" data-iid="' + i.id + '" value="' +
         escapeHtml(i.name) + '" maxlength="60" style="width:150px"></td>' +
       '<td><select class="selItemCat" data-iid="' + i.id + '">' + CATEGORIES.map(c =>
-        '<option' + (c === i.category ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></td>' +
+        '<option value="' + c + '"' + (c === i.category ? ' selected' : '') + '>' +
+        catLabel(c) + '</option>').join('') + '</select></td>' +
       '<td><select class="selItemRarity" data-iid="' + i.id + '">' +
-        Object.entries(RARITY_UA).map(([v, t]) => '<option value="' + v + '"' +
-          (v === i.rarity ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></td>' +
+        Object.keys(RARITY_LABELS).map(v => '<option value="' + v + '"' +
+          (v === i.rarity ? ' selected' : '') + '>' + rarityLabel(v) + '</option>').join('') +
+        '</select></td>' +
       '<td><details><summary class="small">' +
-        (i.targetClasses.length === 0 ? 'всім' : i.targetClasses.map(className).map(escapeHtml).join(', ')) +
+        (i.targetClasses.length === 0 ? t('forAll')
+          : i.targetClasses.map(className).map(escapeHtml).join(', ')) +
         '</summary>' + db.classes.filter(c => !c.isArchived).map(c =>
           '<label class="inline small"><input type="checkbox" class="chkItemClass" data-iid="' + i.id +
           '" value="' + c.id + '"' + (i.targetClasses.includes(c.id) ? ' checked' : '') + '> ' +
           escapeHtml(c.name) + '</label> ').join('') + '</details></td>' +
       '<td class="row">' +
         '<button class="btn btn-sm btnArchItem" data-iid="' + i.id + '">' +
-          (i.isArchived ? 'Розархівувати' : 'Архівувати') + '</button>' +
+          (i.isArchived ? t('unarchive') : t('archive')) + '</button>' +
         '<button class="btn btn-sm btn-danger btnDelItem" data-iid="' + i.id + '">✕</button></td>' +
       '</tr>').join('') +
     '</tbody></table></div>' +
-    '<p class="muted small">Новий предмет додається на вкладці «2. Здобич і заявки» (форма швидкого створення).</p>';
+    '<p class="muted small">' + t('newItemHint') + '</p>';
 
   /* — Класи — */
   const classesHtml =
-    '<div class="table-wrap"><table><thead><tr><th>Назва</th><th>w<sub>dmg</sub></th><th>w<sub>taken</sub></th><th>w<sub>heal</sub></th><th></th></tr></thead><tbody>' +
+    '<div class="table-wrap"><table><thead><tr><th>' + t('thName') +
+      '</th><th>w<sub>dmg</sub></th><th>w<sub>taken</sub></th><th>w<sub>heal</sub></th><th></th></tr></thead><tbody>' +
     db.classes.map(c => '<tr' + (c.isArchived ? ' class="cancelled"' : '') + '>' +
       '<td><input type="text" class="inpClsName" data-cid="' + c.id + '" value="' +
         escapeHtml(c.name) + '" maxlength="30" style="width:130px"></td>' +
@@ -969,18 +1248,18 @@ function renderTab4() {
         '<td><input type="number" class="inpClsW" data-cid="' + c.id + '" data-w="' + k +
         '" min="0" max="1" step="0.05" value="' + c[k] + '" style="width:70px"></td>').join('') +
       '<td class="row"><button class="btn btn-sm btnArchCls" data-cid="' + c.id + '">' +
-        (c.isArchived ? 'Розархівувати' : 'Архівувати') + '</button>' +
+        (c.isArchived ? t('unarchive') : t('archive')) + '</button>' +
       '<button class="btn btn-sm btn-danger btnDelCls" data-cid="' + c.id + '">✕</button></td></tr>').join('') +
     '</tbody></table></div>' +
     '<div class="row" style="margin-top:8px">' +
-      '<input type="text" id="inpNewClsName" placeholder="Назва класу" maxlength="30" class="grow">' +
-      '<button class="btn btn-primary btn-sm" id="btnAddCls">Додати клас (ваги 0.8/0.1/0.1)</button></div>';
+      '<input type="text" id="inpNewClsName" placeholder="' + t('classNamePh') + '" maxlength="30" class="grow">' +
+      '<button class="btn btn-primary btn-sm" id="btnAddCls">' + t('addClass') + '</button></div>';
 
   /* — Типи івентів — */
   const eventsHtml = paData.eventTypes.length === 0
-    ? '<p class="muted">Список порожній — назви додаються автоматично при підтвердженні розподілу.</p>'
-    : paData.eventTypes.map((t, idx) => '<div class="roster-row"><span class="grow">' +
-        escapeHtml(t) + '</span><button class="btn btn-sm btn-danger btnDelEvent" data-idx="' +
+    ? '<p class="muted">' + t('eventsEmpty') + '</p>'
+    : paData.eventTypes.map((ev, idx) => '<div class="roster-row"><span class="grow">' +
+        escapeHtml(ev) + '</span><button class="btn btn-sm btn-danger btnDelEvent" data-idx="' +
         idx + '">✕</button></div>').join('');
 
   /* — Історія — */
@@ -993,24 +1272,26 @@ function renderTab4() {
   }).slice().reverse();
   const historyHtml =
     '<div class="row">' +
-      '<select id="histPlayerFilter"><option value="">— всі гравці —</option>' +
+      '<select id="histPlayerFilter"><option value="">' + t('allPlayersOpt') + '</option>' +
         paData.players.map(p => '<option value="' + p.id + '"' +
           (p.id === f.playerId ? ' selected' : '') + '>' + escapeHtml(p.nickname) + '</option>').join('') +
       '</select>' +
-      '<label class="inline small">з <input type="date" id="histFrom" value="' + f.from + '"></label>' +
-      '<label class="inline small">по <input type="date" id="histTo" value="' + f.to + '"></label>' +
+      '<label class="inline small">' + t('histFrom') + ' <input type="date" id="histFrom" value="' +
+        f.from + '"></label>' +
+      '<label class="inline small">' + t('histTo') + ' <input type="date" id="histTo" value="' +
+        f.to + '"></label>' +
     '</div>' +
-    (histShown.length === 0 ? '<p class="muted" style="margin-top:8px">Записів немає.</p>' :
+    (histShown.length === 0 ? '<p class="muted" style="margin-top:8px">' + t('noRecords') + '</p>' :
       histShown.map(r => '<div class="pos-row' + (r.cancelled ? ' cancelled' : '') + '">' +
         '<div class="pos-head"><span class="muted small">' + r.timestamp.slice(0, 10) + '</span> ' +
         '<span class="badge plain">' + escapeHtml(r.eventTypeName) + '</span> ' +
         '<b>' + escapeHtml(r.itemNameSnapshot) + '</b> ×' + r.quantity +
         ' → <b>' + escapeHtml(r.playerNicknameSnapshot) + '</b>' +
-        ' <span class="muted small">(бал ' + (Math.round(r.scoreAtDistribution * 10) / 10) + ')</span>' +
+        ' <span class="muted small">' + t('histScore', Math.round(r.scoreAtDistribution * 10) / 10) + '</span>' +
         (r.rolled ? ' <span class="badge plain">🎲</span>' : '') +
-        (r.manual ? ' <span class="badge plain">ручне</span>' : '') +
+        (r.manual ? ' <span class="badge plain">' + t('manualBadge') + '</span>' : '') +
         (r.cancelled ? '' : ' <button class="btn btn-sm btn-danger btnCancelRec" data-rid="' +
-          r.id + '">Скасувати</button>') +
+          r.id + '">' + t('cancelRec') + '</button>') +
         '</div></div>').join(''));
 
   /* — Налаштування — */
@@ -1020,35 +1301,41 @@ function renderTab4() {
     ' <input type="number" class="inpSetting" data-key="' + key + '" value="' + val + '" step="any"></label>';
   const settingsHtml =
     '<div class="row">' +
-      numField('scoreTop', 'Бал «ТОП»', st.scoreTop) +
-      numField('scorePresent', 'Бал присутнього', st.scorePresent) +
-      numField('pClass', 'Клас-бонус P', st.pClass) +
+      '<label class="inline small">' + t('langLabel') +
+        ' <select id="selLanguage">' + Object.keys(LANG_NAMES).map(code =>
+          '<option value="' + code + '"' + (code === lang() ? ' selected' : '') + '>' +
+          LANG_NAMES[code] + '</option>').join('') + '</select></label>' +
     '</div><div class="row" style="margin-top:6px">' +
-      numField('kPenalty', 'Штраф історії K', st.kPenalty) +
-      numField('historyDays', 'Вікно історії, днів', st.historyDays) +
-      numField('wWon', 'Штраф за виграш у сеансі', st.wWon) +
-    '</div><p class="small muted" style="margin-bottom:4px">Ваги рідкості в анти-жадібності:</p><div class="row">' +
-      Object.entries(RARITY_UA).map(([v, t]) =>
-        numField('rarityWeights.' + v, t, st.rarityWeights[v])).join('') +
+      numField('scoreTop', t('setScoreTop'), st.scoreTop) +
+      numField('scorePresent', t('setScorePresent'), st.scorePresent) +
+      numField('pClass', t('setPClass'), st.pClass) +
+    '</div><div class="row" style="margin-top:6px">' +
+      numField('kPenalty', t('setKPenalty'), st.kPenalty) +
+      numField('historyDays', t('setHistoryDays'), st.historyDays) +
+      numField('wWon', t('setWWon'), st.wWon) +
+    '</div><p class="small muted" style="margin-bottom:4px">' + t('rarityWeightsLabel') + '</p><div class="row">' +
+      Object.keys(RARITY_LABELS).map(v =>
+        numField('rarityWeights.' + v, rarityLabel(v), st.rarityWeights[v])).join('') +
     '</div><div class="row" style="margin-top:8px">' +
-      '<button class="btn btn-sm" id="btnResetSettings">Скинути до дефолтів</button></div>';
+      '<button class="btn btn-sm" id="btnResetSettings">' + t('resetDefaults') + '</button></div>';
 
   /* — Резервна копія — */
   const backupHtml =
     '<div class="row">' +
-      '<button class="btn" id="btnExport">⬇️ Експорт JSON</button>' +
-      '<label class="btn">⬆️ Імпорт JSON<input type="file" id="importFile" accept=".json,application/json" hidden></label>' +
-    '</div><p class="muted small">Імпорт повністю замінює базу після перевірки формату та підтвердження.</p>';
+      '<button class="btn" id="btnExport">' + t('exportBtn') + '</button>' +
+      '<label class="btn">' + t('importBtn') +
+        '<input type="file" id="importFile" accept=".json,application/json" hidden></label>' +
+    '</div><p class="muted small">' + t('importHint') + '</p>';
 
   document.getElementById('tab4').innerHTML =
-    sect('alliances', '🏰 Альянси (' + db.alliances.length + ')', alliancesHtml) +
-    sect('players', '👥 Гравці (' + paData.players.length + ')', playersHtml) +
-    sect('items', '⚔️ Предмети — спільний каталог (' + db.items.length + ')', itemsHtml) +
-    sect('classes', '🛡️ Класи (' + db.classes.length + ')', classesHtml) +
-    sect('events', '📅 Типи івентів (' + paData.eventTypes.length + ')', eventsHtml) +
-    sect('history', '📜 Історія (' + paData.history.length + ')', historyHtml) +
-    sect('settings', '⚙️ Налаштування алгоритму', settingsHtml) +
-    sect('backup', '💾 Резервна копія', backupHtml);
+    sect('alliances', t('sectAlliances', db.alliances.length), alliancesHtml) +
+    sect('players', t('sectPlayers', paData.players.length), playersHtml) +
+    sect('items', t('sectItems', db.items.length), itemsHtml) +
+    sect('classes', t('sectClasses', db.classes.length), classesHtml) +
+    sect('events', t('sectEvents', paData.eventTypes.length), eventsHtml) +
+    sect('history', t('sectHistory', paData.history.length), historyHtml) +
+    sect('settings', t('sectSettings'), settingsHtml) +
+    sect('backup', t('sectBackup'), backupHtml);
 
   wireTab4();
 }
@@ -1064,9 +1351,9 @@ function wireTab4() {
   /* Альянси */
   tab.querySelector('#btnAddAlliance').addEventListener('click', () => {
     const name = tab.querySelector('#inpNewAlliance').value.trim();
-    if (!name) { banner('Введіть назву альянсу.'); return; }
+    if (!name) { banner(t('enterAllianceName')); return; }
     if (db.alliances.some(a => a.name.toLowerCase() === name.toLowerCase())) {
-      banner('Альянс із такою назвою вже існує.'); return;
+      banner(t('allianceExists')); return;
     }
     const a = { id: LMCore.uuid(), name, createdAt: nowISO() };
     db.alliances.push(a);
@@ -1082,10 +1369,9 @@ function wireTab4() {
     }));
   tab.querySelectorAll('.btnDelAlliance').forEach(b =>
     b.addEventListener('click', e => {
-      if (db.alliances.length <= 1) { banner('Останній альянс видалити не можна.'); return; }
+      if (db.alliances.length <= 1) { banner(t('lastAlliance')); return; }
       const a = db.alliances.find(x => x.id === e.target.dataset.aid);
-      if (!confirm('Видалити альянс «' + a.name + '» РАЗОМ з усіма його гравцями та історією? ' +
-        'Дію неможливо скасувати.')) return;
+      if (!confirm(t('delAllianceConfirm', a.name))) return;
       db.alliances = db.alliances.filter(x => x.id !== a.id);
       delete db.perAlliance[a.id];
       if (db.activeAllianceId === a.id) db.activeAllianceId = db.alliances[0].id;
@@ -1095,9 +1381,9 @@ function wireTab4() {
   /* Гравці */
   tab.querySelector('#btnAddPlayer').addEventListener('click', () => {
     const nick = tab.querySelector('#inpNewNick').value.trim();
-    if (!nick) { banner('Введіть нікнейм.'); return; }
+    if (!nick) { banner(t('enterNick')); return; }
     if (pa().players.some(p => p.nickname.toLowerCase() === nick.toLowerCase())) {
-      banner('Гравець із таким ніком уже є в цьому альянсі.'); return;
+      banner(t('nickExists')); return;
     }
     pa().players.push({ id: LMCore.uuid(), nickname: nick,
       classId: tab.querySelector('#selNewClass').value,
@@ -1111,7 +1397,7 @@ function wireTab4() {
       if (!nick) { e.target.value = p.nickname; return; }
       if (pa().players.some(x => x.id !== p.id &&
           x.nickname.toLowerCase() === nick.toLowerCase())) {
-        banner('Такий нік уже зайнятий.'); e.target.value = p.nickname; return;
+        banner(t('nickTaken')); e.target.value = p.nickname; return;
       }
       p.nickname = nick; mutated();
     }));
@@ -1132,10 +1418,10 @@ function wireTab4() {
     b.addEventListener('click', e => {
       const p = pa().players.find(x => x.id === e.target.dataset.pid);
       if (pa().history.some(r => r.playerId === p.id)) {
-        banner('У гравця є записи в історії — лише деактивація (зніміть галочку «Активний»).');
+        banner(t('playerHasHistory'));
         return;
       }
-      if (!confirm('Видалити гравця «' + p.nickname + '»?')) return;
+      if (!confirm(t('delPlayerConfirm', p.nickname))) return;
       pa().players = pa().players.filter(x => x.id !== p.id);
       const d = pa().draftSession;
       if (d) { delete d.presence[p.id]; delete d.claims[p.id]; }
@@ -1154,7 +1440,7 @@ function wireTab4() {
       const name = e.target.value.trim();
       if (!name) { e.target.value = it.name; return; }
       if (db.items.some(x => x.id !== it.id && x.name.toLowerCase() === name.toLowerCase())) {
-        banner('Предмет із такою назвою вже існує.'); e.target.value = it.name; return;
+        banner(t('itemExists')); e.target.value = it.name; return;
       }
       it.name = name; mutated();
     }));
@@ -1183,9 +1469,9 @@ function wireTab4() {
     b.addEventListener('click', e => {
       const it = db.items.find(x => x.id === e.target.dataset.iid);
       if (anyHistoryHasItem(it.id)) {
-        banner('Предмет фігурує в історії — доступна лише архівація.'); return;
+        banner(t('itemInHistory')); return;
       }
-      if (!confirm('Видалити предмет «' + it.name + '» з каталогу?')) return;
+      if (!confirm(t('delItemConfirm', it.name))) return;
       db.items = db.items.filter(x => x.id !== it.id);
       for (const x of Object.values(db.perAlliance)) {
         const d = x.draftSession;
@@ -1202,9 +1488,9 @@ function wireTab4() {
   /* Класи */
   tab.querySelector('#btnAddCls').addEventListener('click', () => {
     const name = tab.querySelector('#inpNewClsName').value.trim();
-    if (!name) { banner('Введіть назву класу.'); return; }
+    if (!name) { banner(t('enterClassName')); return; }
     if (db.classes.some(c => c.name.toLowerCase() === name.toLowerCase())) {
-      banner('Клас із такою назвою вже існує.'); return;
+      banner(t('classExists')); return;
     }
     db.classes.push({ id: LMCore.uuid(), name, wDmg: 0.8, wTaken: 0.1, wHeal: 0.1,
       isArchived: false });
@@ -1232,9 +1518,9 @@ function wireTab4() {
     b.addEventListener('click', e => {
       const c = db.classes.find(x => x.id === e.target.dataset.cid);
       if (anyPlayerHasClass(c.id)) {
-        banner('Є гравці цього класу — доступна лише архівація.'); return;
+        banner(t('classHasPlayers')); return;
       }
-      if (!confirm('Видалити клас «' + c.name + '»?')) return;
+      if (!confirm(t('delClassConfirm', c.name))) return;
       db.classes = db.classes.filter(x => x.id !== c.id);
       db.items.forEach(i => { i.targetClasses = i.targetClasses.filter(x => x !== c.id); });
       mutated(); renderTab4();
@@ -1260,8 +1546,7 @@ function wireTab4() {
   tab.querySelectorAll('.btnCancelRec').forEach(b =>
     b.addEventListener('click', e => {
       const r = pa().history.find(x => x.id === e.target.dataset.rid);
-      if (!confirm('Скасувати запис «' + r.itemNameSnapshot + ' → ' +
-        r.playerNicknameSnapshot + '»? Він перестане впливати на анти-жадібність.')) return;
+      if (!confirm(t('cancelRecConfirm', r.itemNameSnapshot, r.playerNicknameSnapshot))) return;
       r.cancelled = true; mutated(); renderTab4();
     }));
 
@@ -1280,11 +1565,16 @@ function wireTab4() {
       e.target.value = key === 'historyDays' ? Math.round(v) : v;
       mutated();
     }));
+  tab.querySelector('#selLanguage').addEventListener('change', e => {
+    db.settings.language = e.target.value;
+    mutated(); renderAll();
+  });
   tab.querySelector('#btnResetSettings').addEventListener('click', () => {
-    if (!confirm('Повернути всі константи алгоритму до значень за замовчуванням?')) return;
-    const wh = db.settings.webhookUrl;
+    if (!confirm(t('resetConfirm'))) return;
+    const wh = db.settings.webhookUrl, lg = db.settings.language;
     db.settings = LMCore.defaultSettings();
     db.settings.webhookUrl = wh;
+    db.settings.language = lg;   // мова — не константа алгоритму, скидання її не чіпає
     mutated(); renderTab4();
   });
 
@@ -1304,12 +1594,12 @@ function wireTab4() {
     reader.onload = () => {
       let parsed;
       try { parsed = JSON.parse(reader.result); }
-      catch (err) { banner('Файл не є коректним JSON: ' + err.message); return; }
+      catch (err) { banner(t('notJson', err.message)); return; }
       const v = LMCore.validateImport(parsed);
-      if (!v.ok) { banner('Імпорт відхилено: ' + v.error); return; }
-      if (!confirm('Замінити ВСЮ поточну базу вмістом файлу «' + file.name + '»?')) return;
+      if (!v.ok) { banner(t('importRejected', v.error)); return; }
+      if (!confirm(t('importConfirm', file.name))) return;
       db = v.db; ui.calcResult = null; save(); renderAll(); renderTab4();
-      banner('Базу імпортовано ✓');
+      banner(t('imported'));
     };
     reader.readAsText(file);
     e.target.value = '';
