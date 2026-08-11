@@ -149,8 +149,9 @@ const LMCore = (() => {
     scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
     historyDays: 14, wWon: 50,
     rarityWeights: Object.freeze({ common: 1, rare: 2, epic: 4, legendary: 8 }),
-    webhookUrl: '', language: 'uk'
+    webhookUrl: '', language: 'ru'
   });
+  const LANGS = Object.freeze(['ru', 'en']);
   const RARITY_RANK = Object.freeze({ common: 1, rare: 2, epic: 3, legendary: 4 });
   function uuid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -163,7 +164,7 @@ const LMCore = (() => {
   }
 
   const CLASS_SEED = [
-    ['Танк', 0.2, 0.7, 0.1], ['Хіл', 0.1, 0.1, 0.8], ['Фріз/Контроль', 0.5, 0.3, 0.2],
+    ['Танк', 0.2, 0.7, 0.1], ['Хил', 0.1, 0.1, 0.8], ['Фриз/Контроль', 0.5, 0.3, 0.2],
     ['МДД', 0.8, 0.1, 0.1], ['РДД', 0.8, 0.1, 0.1], ['Маг', 0.8, 0.1, 0.1]
   ];
 
@@ -187,7 +188,8 @@ const LMCore = (() => {
 
   function migrate(db) {
     if (db.schemaVersion === 1) {
-      if (db.settings && !db.settings.language) db.settings.language = 'uk'; // бекфіл v1.1
+      // v1.2: мова лише ru|en; відсутня чи невідома (зокрема стара uk) → ru
+      if (db.settings && !LANGS.includes(db.settings.language)) db.settings.language = 'ru';
       return { ok: true, db };
     }
     return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
@@ -352,11 +354,8 @@ const LMCore = (() => {
     return new Set(Object.keys(scores).filter(pid => scores[pid] === max));
   }
 
-  // v1.1: фіксовані рядки звіту трьома мовами; мова = settings.language
+  // v1.2: фіксовані рядки звіту — російська (дефолт) та англійська
   const REPORT_I18N = Object.freeze({
-    uk: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РОЗПОДІЛ ЗДОБИЧІ (' + e + ')',
-          pcs: 'шт.', top: 'ТОП Вклад', free: '[Вільний залишок]',
-          footer: 'Дякуємо всім за участь! Предмети чекають у магазині альянсу.' },
     ru: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (' + e + ')',
           pcs: 'шт.', top: 'ТОП Вклад', free: '[Свободный остаток]',
           footer: 'Спасибо всем за участие! Предметы ждут в магазине альянса.' },
@@ -368,7 +367,7 @@ const LMCore = (() => {
   // ТЗ §6: рядок на предмет; кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
   function formatReport({ allianceName, eventTypeName, positions, itemsById,
                           playersById, classesById, topSet, lang }) {
-    const L = REPORT_I18N[lang] || REPORT_I18N.uk;
+    const L = REPORT_I18N[lang] || REPORT_I18N.ru;
     const byItem = [];       // порядок першої появи предмета
     const groups = new Map();
     for (const pos of positions) {
@@ -445,81 +444,6 @@ function escapeHtml(s) {
 }
 /* ===== i18n (v1.1): UI трьома мовами; мова звіту — в LMCore.REPORT_I18N ===== */
 const I18N = {
-  uk: {
-    tab1: '1. Подія та вклад', tab2: '2. Здобич і заявки', tab3: '3. Розподіл',
-    tab4: '4. Бази та налаштування', allianceTitle: 'Активний альянс',
-    lsUnavailable: m => 'LocalStorage недоступний: ' + m + '. Дані не збережуться!',
-    dbNotLoaded: e => 'База не завантажена: ' + e,
-    dbCorrupt: m => 'База пошкоджена, створено нову. Помилка: ' + m,
-    saveFail: m => 'Не вдалося зберегти (сховище переповнене?): ' + m +
-      ' Зробіть експорт JSON на вкладці 4!',
-    eventH2: 'Івент', eventPh: 'Тип івенту (напр., Вторгнення монстрів)',
-    modeLabel: 'Режим вкладу:', modeSimple: 'Простий (ТОП)', modeAdvanced: 'Розширений (числа)',
-    presenceH2: 'Присутні та вклад', allPresent: 'Всі присутні', nonePresent: 'Зняти всіх',
-    present: 'Присутній', topFlag: 'ТОП',
-    noPlayers: 'Немає активних гравців. Додайте їх на вкладці «4. Бази та налаштування».',
-    dropsH2: 'Що випало', itemPh: 'Назва предмета', pcsShort: 'шт.', add: 'Додати',
-    quickHint: 'Предмета немає в каталозі — створіть його:', qiNamePh: 'Назва',
-    fitsLabel: 'Кому підходить (порожньо = всім):', createAdd: 'Створити і додати',
-    nothingAdded: 'Поки нічого не додано.', claimsH2: 'Заявки (хто що хоче)',
-    noPresent: 'Немає присутніх гравців — позначте їх на вкладці «1. Подія та вклад».',
-    addLootFirst: 'Додайте здобич вище, щоб проставити заявки.', playerTh: 'Гравець',
-    enterItemName: 'Введіть назву предмета.', itemExists: 'Предмет із такою назвою вже існує.',
-    calc: '⚖️ Розрахувати розподіл',
-    calcHint: 'Потрібні присутні гравці (вкладка 1) і здобич (вкладка 2).',
-    resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Вільний залишок',
-    classBonusBadge: 'клас-бонус', rollBadge: '🎲 рол', manualBadge: 'ручне',
-    winnerLabel: 'Переможець:', autoOpt: '— авто —', claimantsGrp: 'Претенденти',
-    otherGrp: 'Інший присутній гравець', chatTextH2: 'Текст для чату',
-    copyBtn: '📋 Скопіювати текст', confirmBtn: '✅ Підтвердити та зберегти',
-    copied: 'Скопійовано ✓', copyFail: 'Не вдалося скопіювати — виділіть текст вручну.',
-    confirmSave: 'Зберегти розподіл в історію? Чернетку сеансу буде очищено.',
-    savedToHistory: n => 'Збережено в історію ✓ (' + n + ' записів)', defaultEvent: 'Івент',
-    sectAlliances: n => '🏰 Альянси (' + n + ')', sectPlayers: n => '👥 Гравці (' + n + ')',
-    sectItems: n => '⚔️ Предмети — спільний каталог (' + n + ')',
-    sectClasses: n => '🛡️ Класи (' + n + ')', sectEvents: n => '📅 Типи івентів (' + n + ')',
-    sectHistory: n => '📜 Історія (' + n + ')', sectSettings: '⚙️ Налаштування алгоритму',
-    sectBackup: '💾 Резервна копія', del: 'Видалити',
-    newAlliancePh: 'Назва нового альянсу', addAlliance: 'Додати альянс',
-    enterAllianceName: 'Введіть назву альянсу.',
-    allianceExists: 'Альянс із такою назвою вже існує.',
-    lastAlliance: 'Останній альянс видалити не можна.',
-    delAllianceConfirm: n => 'Видалити альянс «' + n + '» РАЗОМ з усіма його гравцями та ' +
-      'історією? Дію неможливо скасувати.',
-    thNick: 'Нік', thClass: 'Клас', thStatus: 'Статус', thActive: 'Активний',
-    nickPh: 'Нікнейм', addPlayer: 'Додати гравця', enterNick: 'Введіть нікнейм.',
-    nickExists: 'Гравець із таким ніком уже є в цьому альянсі.',
-    nickTaken: 'Такий нік уже зайнятий.',
-    playerHasHistory: 'У гравця є записи в історії — лише деактивація (зніміть галочку «Активний»).',
-    delPlayerConfirm: n => 'Видалити гравця «' + n + '»?',
-    searchCatalogPh: 'Пошук у каталозі', thName: 'Назва', thCategory: 'Категорія',
-    thRarity: 'Рідкість', thClasses: 'Класи', forAll: 'всім',
-    archive: 'Архівувати', unarchive: 'Розархівувати',
-    itemInHistory: 'Предмет фігурує в історії — доступна лише архівація.',
-    delItemConfirm: n => 'Видалити предмет «' + n + '» з каталогу?',
-    newItemHint: 'Новий предмет додається на вкладці «2. Здобич і заявки» (форма швидкого створення).',
-    classNamePh: 'Назва класу', addClass: 'Додати клас (ваги 0.8/0.1/0.1)',
-    enterClassName: 'Введіть назву класу.', classExists: 'Клас із такою назвою вже існує.',
-    classHasPlayers: 'Є гравці цього класу — доступна лише архівація.',
-    delClassConfirm: n => 'Видалити клас «' + n + '»?',
-    eventsEmpty: 'Список порожній — назви додаються автоматично при підтвердженні розподілу.',
-    allPlayersOpt: '— всі гравці —', histFrom: 'з', histTo: 'по', noRecords: 'Записів немає.',
-    histScore: s => '(бал ' + s + ')', cancelRec: 'Скасувати',
-    cancelRecConfirm: (i, n) => 'Скасувати запис «' + i + ' → ' + n +
-      '»? Він перестане впливати на анти-жадібність.',
-    setScoreTop: 'Бал «ТОП»', setScorePresent: 'Бал присутнього', setPClass: 'Клас-бонус P',
-    setKPenalty: 'Штраф історії K', setHistoryDays: 'Вікно історії, днів',
-    setWWon: 'Штраф за виграш у сеансі',
-    rarityWeightsLabel: 'Ваги рідкості в анти-жадібності:', resetDefaults: 'Скинути до дефолтів',
-    resetConfirm: 'Повернути всі константи алгоритму до значень за замовчуванням?',
-    langLabel: 'Мова інтерфейсу та звіту:',
-    exportBtn: '⬇️ Експорт JSON', importBtn: '⬆️ Імпорт JSON',
-    importHint: 'Імпорт повністю замінює базу після перевірки формату та підтвердження.',
-    notJson: m => 'Файл не є коректним JSON: ' + m,
-    importRejected: e => 'Імпорт відхилено: ' + e,
-    importConfirm: n => 'Замінити ВСЮ поточну базу вмістом файлу «' + n + '»?',
-    imported: 'Базу імпортовано ✓'
-  },
   ru: {
     tab1: '1. Событие и вклад', tab2: '2. Добыча и заявки', tab3: '3. Распределение',
     tab4: '4. Базы и настройки', allianceTitle: 'Активный альянс',
@@ -670,25 +594,25 @@ const I18N = {
     imported: 'Database imported ✓'
   }
 };
-const LANG_NAMES = { uk: 'Українська', ru: 'Русский', en: 'English' };
-function lang() { return (db && db.settings && db.settings.language) || 'uk'; }
+const LANG_NAMES = { ru: 'Русский', en: 'English' };
+function lang() { return (db && db.settings && db.settings.language) || 'ru'; }
 function t(key, ...args) {
   const v = (I18N[lang()] && I18N[lang()][key]) !== undefined
-    ? I18N[lang()][key] : I18N.uk[key];
+    ? I18N[lang()][key] : I18N.ru[key];
   return typeof v === 'function' ? v(...args) : (v !== undefined ? v : key);
 }
-const ROLE_LABELS = { 'Офіцер': { uk: 'Офіцер', ru: 'Офицер', en: 'Officer' },
-  'Ветеран': { uk: 'Ветеран', ru: 'Ветеран', en: 'Veteran' },
-  'Учасник': { uk: 'Учасник', ru: 'Участник', en: 'Member' } };
-const CAT_LABELS = { 'Зброя': { uk: 'Зброя', ru: 'Оружие', en: 'Weapon' },
-  'Броня': { uk: 'Броня', ru: 'Броня', en: 'Armor' },
-  'Біжутерія': { uk: 'Біжутерія', ru: 'Бижутерия', en: 'Jewelry' },
-  'Ресурси': { uk: 'Ресурси', ru: 'Ресурсы', en: 'Resources' },
-  'Інше': { uk: 'Інше', ru: 'Прочее', en: 'Other' } };
-const RARITY_LABELS = { common: { uk: 'Звичайний', ru: 'Обычный', en: 'Common' },
-  rare: { uk: 'Рідкісний', ru: 'Редкий', en: 'Rare' },
-  epic: { uk: 'Епічний', ru: 'Эпический', en: 'Epic' },
-  legendary: { uk: 'Легендарний', ru: 'Легендарный', en: 'Legendary' } };
+const ROLE_LABELS = { 'Офіцер': { ru: 'Офицер', en: 'Officer' },
+  'Ветеран': { ru: 'Ветеран', en: 'Veteran' },
+  'Учасник': { ru: 'Участник', en: 'Member' } };
+const CAT_LABELS = { 'Зброя': { ru: 'Оружие', en: 'Weapon' },
+  'Броня': { ru: 'Броня', en: 'Armor' },
+  'Біжутерія': { ru: 'Бижутерия', en: 'Jewelry' },
+  'Ресурси': { ru: 'Ресурсы', en: 'Resources' },
+  'Інше': { ru: 'Прочее', en: 'Other' } };
+const RARITY_LABELS = { common: { ru: 'Обычный', en: 'Common' },
+  rare: { ru: 'Редкий', en: 'Rare' },
+  epic: { ru: 'Эпический', en: 'Epic' },
+  legendary: { ru: 'Легендарный', en: 'Legendary' } };
 function roleLabel(v) { return (ROLE_LABELS[v] && ROLE_LABELS[v][lang()]) || v; }
 function catLabel(v) { return (CAT_LABELS[v] && CAT_LABELS[v][lang()]) || v; }
 function rarityLabel(v) { return (RARITY_LABELS[v] && RARITY_LABELS[v][lang()]) || v; }

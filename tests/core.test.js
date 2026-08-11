@@ -22,7 +22,7 @@ test('LMCore існує, DEFAULTS відповідає ТЗ §3.6', () => {
     scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
     historyDays: 14, wWon: 50,
     rarityWeights: { common: 1, rare: 2, epic: 4, legendary: 8 },
-    webhookUrl: '', language: 'uk'
+    webhookUrl: '', language: 'ru'
   });
   assert.ok(Object.isFrozen(LMCore.DEFAULTS));
 });
@@ -42,7 +42,7 @@ test('emptyDb: перший запуск за ТЗ §7.1', () => {
   assert.strictEqual(db.activeAllianceId, db.alliances[0].id);
   assert.deepStrictEqual(db.items, []);
   const names = db.classes.map(c => c.name);
-  assert.deepStrictEqual(names, ['Танк', 'Хіл', 'Фріз/Контроль', 'МДД', 'РДД', 'Маг']);
+  assert.deepStrictEqual(names, ['Танк', 'Хил', 'Фриз/Контроль', 'МДД', 'РДД', 'Маг']);
   const tank = db.classes[0];
   assert.deepStrictEqual(
     [tank.wDmg, tank.wTaken, tank.wHeal, tank.isArchived], [0.2, 0.7, 0.1, false]);
@@ -246,7 +246,7 @@ test('topContributors: простий — прапорці, розширений
   assert.deepStrictEqual([...LMCore.topContributors(adv, { 'p-a': 80, 'p-b': 85 })], ['p-b']);
   assert.deepStrictEqual([...LMCore.topContributors(adv, {})], []);
 });
-test('formatReport: побайтово збігається з прикладом ТЗ §6', () => {
+test('formatReport: дефолт без lang — російська, побайтово (ТЗ §6)', () => {
   const cls6 = [mkClass('c1', 'Танк', 0.2, 0.7, 0.1), mkClass('c2', 'Маг', 0.8, 0.1, 0.1),
     mkClass('c3', 'МДД', 0.8, 0.1, 0.1), mkClass('c4', 'Хіл', 0.1, 0.1, 0.8),
     mkClass('c5', 'РДД', 0.8, 0.1, 0.1)];
@@ -268,14 +268,14 @@ test('formatReport: побайтово збігається з прикладо�
   const text = LMCore.formatReport({ allianceName: 'Alpha', eventTypeName: 'PvP-Івент',
     positions, itemsById, playersById, classesById, topSet: new Set(['n1']) });
   assert.strictEqual(text,
-    '📜 [АЛЬЯНС: Alpha] РОЗПОДІЛ ЗДОБИЧІ (PvP-Івент)\n' +
+    '📜 [АЛЬЯНС: Alpha] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (PvP-Івент)\n' +
     '\n' +
     '🔹 Меч Дракона (1 шт.) — @Нік1 [Танк | ТОП Вклад]\n' +
     '🔹 Посох Сили (2 шт.) — @Нік2 [Маг], @Нік3 [Маг]\n' +
     '🔹 Кольчуга Гвардійця (1 шт.) — @Нік4 [МДД]\n' +
-    '🔹 Сундук Ресурсів (3 шт.) — @Нік5 [Хіл], @Нік6 [РДД], [Вільний залишок]\n' +
+    '🔹 Сундук Ресурсів (3 шт.) — @Нік5 [Хіл], @Нік6 [РДД], [Свободный остаток]\n' +
     '\n' +
-    'Дякуємо всім за участь! Предмети чекають у магазині альянсу.');
+    'Спасибо всем за участие! Предметы ждут в магазине альянса.');
 });
 test('formatReport: кілька вільних штук — одна позначка', () => {
   const itemsById = { b: mkItem('b', 'Скриня', 'common') };
@@ -284,7 +284,7 @@ test('formatReport: кілька вільних штук — одна позна
   const text = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X',
     positions: [mkPos2(0, 'p-a'), mkPos2(1, null), mkPos2(2, null)],
     itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set() });
-  assert.strictEqual((text.match(/\[Вільний залишок\]/g) || []).length, 1);
+  assert.strictEqual((text.match(/\[Свободный остаток\]/g) || []).length, 1);
 });
 test('buildRecords: групування пар гравець×предмет, снапшоти, пропуск залишку (крит. 11)', () => {
   const mkPos3 = (itemId, ci, w, extra) => Object.assign({ key: itemId + '#' + ci, itemId,
@@ -313,12 +313,16 @@ test('buildRecords: групування пар гравець×предмет, 
 });
 
 // ---- i18n (v1.1) ----
-test('migrate: бекфіл settings.language для старих баз v1', () => {
-  const db = LMCore.emptyDb(NOW);
-  delete db.settings.language;
-  const mig = LMCore.migrate(db);
-  assert.strictEqual(mig.ok, true);
-  assert.strictEqual(mig.db.settings.language, 'uk');
+test('migrate: бекфіл і нормалізація settings.language (дефолт ru)', () => {
+  const noLang = LMCore.emptyDb(NOW);
+  delete noLang.settings.language;
+  assert.strictEqual(LMCore.migrate(noLang).db.settings.language, 'ru');
+  const ukDb = LMCore.emptyDb(NOW);
+  ukDb.settings.language = 'uk';   // мова, якої більше немає в переліку
+  assert.strictEqual(LMCore.migrate(ukDb).db.settings.language, 'ru');
+  const enDb = LMCore.emptyDb(NOW);
+  enDb.settings.language = 'en';
+  assert.strictEqual(LMCore.migrate(enDb).db.settings.language, 'en');
 });
 test('formatReport: російська — побайтово', () => {
   const itemsById = { b: mkItem('b', 'Скриня', 'common') };
@@ -350,15 +354,15 @@ test('formatReport: англійська — побайтово', () => {
     '\n' +
     'Thanks everyone for participating! Items are waiting in the alliance shop.');
 });
-test('formatReport: без lang — українська за замовчуванням (регресія)', () => {
+test('formatReport: невідома мова падає на російську', () => {
   const itemsById = { b: mkItem('b', 'Скриня', 'common') };
   const pos = { key: 'b#0', itemId: 'b', copyIndex: 0, winnerId: 'p-a',
     priority: 0, rolled: false, manual: false, classBonus: false, candidates: [] };
   const text = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X',
     positions: [pos], itemsById, playersById: PBYID, classesById: CLSBYID,
-    topSet: new Set() });
-  assert.ok(text.includes('РОЗПОДІЛ ЗДОБИЧІ'));
-  assert.ok(text.endsWith('Дякуємо всім за участь! Предмети чекають у магазині альянсу.'));
+    topSet: new Set(), lang: 'uk' });
+  assert.ok(text.includes('РАСПРЕДЕЛЕНИЕ ДОБЫЧИ'));
+  assert.ok(text.endsWith('Спасибо всем за участие! Предметы ждут в магазине альянса.'));
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
