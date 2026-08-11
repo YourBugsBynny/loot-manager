@@ -120,8 +120,94 @@ const LMCore = (() => {
     return scores;
   }
 
+  // ТЗ §5.4: анти-жадібність — сума ваг рідкості отриманого за вікно historyDays
+  function historyLoad(history, itemsById, playerId, nowISO, settings) {
+    const cutoff = Date.parse(nowISO) - settings.historyDays * 86400000;
+    let sum = 0;
+    for (const r of history) {
+      if (r.playerId !== playerId || r.cancelled) continue;
+      if (Date.parse(r.timestamp) < cutoff) continue;
+      const item = itemsById[r.itemId];
+      const w = item && settings.rarityWeights[item.rarity] !== undefined
+        ? settings.rarityWeights[item.rarity] : 1;
+      sum += w * (r.quantity || 1);
+    }
+    return sum;
+  }
+
+  // ТЗ §5.3–5.7: черга пріоритетів; overrides — ручні рішення, rollMemo — стабільність ролів
+  function distribute(ctx) {
+    const { session, playersById, classesById, itemsById, history, settings,
+            nowISO, overrides, rollMemo } = ctx;
+    const rng = ctx.rng || Math.random;
+    const scores = computeScores(session, playersById, classesById, settings);
+    const presentIds = Object.keys(scores);
+    const loadCache = new Map();
+    const loadOf = pid => {
+      if (!loadCache.has(pid)) {
+        loadCache.set(pid, historyLoad(history, itemsById, pid, nowISO, settings));
+      }
+      return loadCache.get(pid);
+    };
+    const drops = (session.drops || [])
+      .map((d, idx) => ({ ...d, idx,
+        rank: (itemsById[d.itemId] && RARITY_RANK[itemsById[d.itemId].rarity]) || 0 }))
+      .sort((a, b) => b.rank - a.rank || a.idx - b.idx);
+    const wonCount = {};   // pid → штук виграно в сеансі (wWon-штраф)
+    const wonItem = {};    // pid → Set(itemId): правило «одна штука предмета на гравця»
+    const positions = [];
+    for (const d of drops) {
+      const item = itemsById[d.itemId];
+      if (!item) continue;
+      const qty = Math.max(1, Number(d.quantity) || 1);
+      const hasClassBonus = pid => item.targetClasses.length > 0 &&
+        item.targetClasses.includes(playersById[pid].classId);
+      for (let copy = 0; copy < qty; copy++) {
+        const key = d.itemId + '#' + copy;
+        const prioOf = pid => scores[pid]
+          + (hasClassBonus(pid) ? settings.pClass : 0)
+          - settings.kPenalty * loadOf(pid)
+          - settings.wWon * (wonCount[pid] || 0);
+        const cands = presentIds
+          .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
+                         session.claims[pid].includes(d.itemId))
+          .filter(pid => !(wonItem[pid] && wonItem[pid].has(d.itemId)))
+          .map(pid => ({ playerId: pid, priority: prioOf(pid) }))
+          .sort((a, b) => b.priority - a.priority);
+        const manualWinner = overrides && overrides[key];
+        let winnerId = null, priority = null, rolled = false, manual = false;
+        if (manualWinner && playersById[manualWinner] && scores[manualWinner] !== undefined) {
+          winnerId = manualWinner; manual = true;
+          const c = cands.find(x => x.playerId === manualWinner);
+          priority = c ? c.priority : null;
+        } else if (cands.length > 0) {
+          const top = cands[0].priority;
+          const leaders = cands.filter(c => top - c.priority < 0.001);
+          if (leaders.length > 1) {
+            rolled = true;
+            const memoWinner = rollMemo && rollMemo[key];
+            const chosen = (memoWinner && leaders.some(l => l.playerId === memoWinner))
+              ? leaders.find(l => l.playerId === memoWinner)
+              : leaders[Math.floor(rng() * leaders.length)];
+            winnerId = chosen.playerId; priority = chosen.priority;
+          } else {
+            winnerId = leaders[0].playerId; priority = leaders[0].priority;
+          }
+        }
+        if (winnerId) {
+          wonCount[winnerId] = (wonCount[winnerId] || 0) + 1;
+          (wonItem[winnerId] = wonItem[winnerId] || new Set()).add(d.itemId);
+        }
+        positions.push({ key, itemId: d.itemId, copyIndex: copy, winnerId, priority,
+          rolled, manual, classBonus: winnerId ? hasClassBonus(winnerId) : false,
+          candidates: cands });
+      }
+    }
+    return { positions, scores };
+  }
+
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
-           computeScores };
+           computeScores, historyLoad, distribute };
 })();
 </script>
 

@@ -126,5 +126,116 @@ test('computeScores: нульові максимуми не дають NaN (ТЗ
     { 'p-a': 0, 'p-b': 0 });
 });
 
+// ---- Task 4 ----
+function mkItem(id, name, rarity, targetClasses, category) {
+  return { id, name, category: category || 'Зброя', targetClasses: targetClasses || [],
+           rarity, isArchived: false };
+}
+const IT = {
+  sword: mkItem('i-sword', 'Меч', 'legendary', ['c-tank']),
+  staff: mkItem('i-staff', 'Посох', 'epic', ['c-heal']),
+  box:   mkItem('i-box', 'Скриня', 'common', [], 'Ресурси')
+};
+const ITBYID = Object.fromEntries(Object.values(IT).map(i => [i.id, i]));
+function mkRec(playerId, itemId, timestamp, quantity, cancelled) {
+  return { id: LMCore.uuid(), timestamp, eventTypeName: 'Тест', itemId,
+    itemNameSnapshot: ITBYID[itemId].name, playerId,
+    playerNicknameSnapshot: 'x', quantity: quantity || 1,
+    scoreAtDistribution: 0, rolled: false, manual: false, cancelled: !!cancelled };
+}
+const rngZero = () => 0;
+
+test('historyLoad: вікно N днів, cancelled і рідкість (ТЗ §5.4, §7.7)', () => {
+  const hist = [
+    mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1),        // legendary ×8
+    mkRec('p-a', 'i-box',   '2026-08-01T00:00:00.000Z', 3),        // common ×1×3
+    mkRec('p-a', 'i-staff', '2026-07-01T00:00:00.000Z', 1),        // поза вікном 14 дн
+    mkRec('p-a', 'i-staff', '2026-08-09T00:00:00.000Z', 1, true),  // cancelled
+    mkRec('p-b', 'i-sword', '2026-08-10T00:00:00.000Z', 1)         // чужий
+  ];
+  assert.strictEqual(LMCore.historyLoad(hist, ITBYID, 'p-a', NOW, S), 8 + 3);
+});
+test('distribute: клас-бонус перемагає при рівному вкладі (крит. приймання 4)', () => {
+  const session = { mode: 'simple', eventTypeName: 'Бос',
+    presence: { 'p-a': { present: true, top: false }, 'p-c': { present: true, top: false } },
+    drops: [{ itemId: 'i-sword', quantity: 1 }],
+    claims: { 'p-a': ['i-sword'], 'p-c': ['i-sword'] } };
+  const { positions } = LMCore.distribute({ session, playersById: PBYID,
+    classesById: CLSBYID, itemsById: ITBYID, history: [], settings: S,
+    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
+  assert.strictEqual(positions.length, 1);
+  assert.strictEqual(positions[0].winnerId, 'p-a');          // танк, бонус +25
+  assert.strictEqual(positions[0].classBonus, true);
+  assert.strictEqual(positions[0].rolled, false);
+  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-a', 'p-c']);
+  assert.strictEqual(positions[0].candidates[0].priority, 75);   // 50+25
+  assert.strictEqual(positions[0].candidates[1].priority, 50);
+});
+test('distribute: анти-жадібність — вчорашня легендарка програє (крит. 5)', () => {
+  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
+  const session = { mode: 'simple', eventTypeName: 'Бос',
+    presence: { 'p-a': { present: true, top: false }, 'p-c': { present: true, top: false } },
+    drops: [{ itemId: 'i-box', quantity: 1 }],
+    claims: { 'p-a': ['i-box'], 'p-c': ['i-box'] } };
+  const { positions } = LMCore.distribute({ session, playersById: PBYID,
+    classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
+    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
+  assert.strictEqual(positions[0].winnerId, 'p-c');   // p-a: 50−10·8=−30
+});
+test('distribute: порядок за рідкістю, одна штука на гравця, вільний залишок', () => {
+  const session = { mode: 'simple', eventTypeName: 'Бос',
+    presence: { 'p-a': { present: true, top: false }, 'p-b': { present: true, top: false } },
+    drops: [{ itemId: 'i-box', quantity: 3 }, { itemId: 'i-sword', quantity: 1 }],
+    claims: { 'p-a': ['i-box', 'i-sword'], 'p-b': ['i-box'] } };
+  const { positions } = LMCore.distribute({ session, playersById: PBYID,
+    classesById: CLSBYID, itemsById: ITBYID, history: [], settings: S,
+    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
+  // сортування: sword (legendary) перший, потім 3 позиції скрині
+  assert.deepStrictEqual(positions.map(p => p.itemId),
+    ['i-sword', 'i-box', 'i-box', 'i-box']);
+  assert.strictEqual(positions[0].winnerId, 'p-a');       // єдиний претендент
+  // скриня №1: p-a виграв меч → wWon·1: 50−50=0 проти p-b 50 → p-b
+  assert.strictEqual(positions[1].winnerId, 'p-b');
+  // скриня №2: p-b уже має скриню (одна штука на гравця) → лишається p-a
+  assert.strictEqual(positions[2].winnerId, 'p-a');
+  // скриня №3: обидва вже мають → вільний залишок
+  assert.strictEqual(positions[3].winnerId, null);
+});
+test('distribute: нічия — рол за rng, rollMemo стабілізує перерахунок (крит. 8)', () => {
+  const session = { mode: 'simple', eventTypeName: 'Бос',
+    presence: { 'p-a': { present: true, top: false }, 'p-b': { present: true, top: false } },
+    drops: [{ itemId: 'i-box', quantity: 1 }],
+    claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } };
+  const ctx = { session, playersById: PBYID, classesById: CLSBYID, itemsById: ITBYID,
+    history: [], settings: S, nowISO: NOW, overrides: {}, rollMemo: {},
+    rng: () => 0.9 };                                    // обере останнього лідера
+  const r1 = LMCore.distribute(ctx);
+  assert.strictEqual(r1.positions[0].rolled, true);
+  assert.strictEqual(r1.positions[0].winnerId, 'p-b');
+  // мемоізуємо і перераховуємо з іншим rng — переможець не змінюється
+  const memo = { [r1.positions[0].key]: r1.positions[0].winnerId };
+  const r2 = LMCore.distribute({ ...ctx, rng: () => 0, rollMemo: memo });
+  assert.strictEqual(r2.positions[0].winnerId, 'p-b');
+  assert.strictEqual(r2.positions[0].rolled, true);
+});
+test('distribute: override — ручний переможець поза претендентами, перерахунок нижче', () => {
+  const session = { mode: 'simple', eventTypeName: 'Бос',
+    presence: { 'p-a': { present: true, top: true }, 'p-b': { present: true, top: false } },
+    drops: [{ itemId: 'i-sword', quantity: 1 }, { itemId: 'i-box', quantity: 1 }],
+    claims: { 'p-a': ['i-sword', 'i-box'] } };   // p-b нічого не просив
+  const base = { session, playersById: PBYID, classesById: CLSBYID, itemsById: ITBYID,
+    history: [], settings: S, nowISO: NOW, rng: rngZero, rollMemo: {} };
+  const auto = LMCore.distribute({ ...base, overrides: {} });
+  assert.strictEqual(auto.positions[0].winnerId, 'p-a');   // меч
+  assert.strictEqual(auto.positions[1].winnerId, 'p-a');   // і скриня (єдиний претендент)
+  // офіцер віддає меч p-b вручну:
+  const over = LMCore.distribute({ ...base, overrides: { 'i-sword#0': 'p-b' } });
+  assert.strictEqual(over.positions[0].winnerId, 'p-b');
+  assert.strictEqual(over.positions[0].manual, true);
+  // p-a більше не має wWon-штрафу і забирає скриню з повним балом (без клас-бонусу)
+  assert.strictEqual(over.positions[1].winnerId, 'p-a');
+  assert.strictEqual(over.positions[1].priority, 100);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
