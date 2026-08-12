@@ -525,6 +525,25 @@ test('distribute: вибулий претендент не бере участі
   assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-a']);
 });
 
+test('isPristine: чиста база — так; будь-які дані користувача — ні', () => {
+  const fresh = LMCore.emptyDb(NOW);
+  assert.strictEqual(LMCore.isPristine(fresh), true);
+  const withPlayer = LMCore.emptyDb(NOW);
+  withPlayer.perAlliance[withPlayer.activeAllianceId].players.push(mkPlayer('p', 'X', 'c'));
+  assert.strictEqual(LMCore.isPristine(withPlayer), false);
+  const withItem = LMCore.emptyDb(NOW);
+  withItem.items.push(mkItem('i', 'Меч', 'rare'));
+  assert.strictEqual(LMCore.isPristine(withItem), false);
+  const withHistory = LMCore.emptyDb(NOW);
+  withHistory.perAlliance[withHistory.activeAllianceId].history.push(
+    mkRec('p-a', 'i-box', NOW, 1));
+  assert.strictEqual(LMCore.isPristine(withHistory), false);
+  const twoAlliances = LMCore.emptyDb(NOW);
+  twoAlliances.alliances.push({ id: 'a2', name: 'Другий', createdAt: NOW });
+  twoAlliances.perAlliance['a2'] = { players: [], history: [], eventTypes: [],
+    draftSession: null };
+  assert.strictEqual(LMCore.isPristine(twoAlliances), false);
+});
 test('emptyDb v1.5: сід — п\'ять реальних класів гри', () => {
   const db = LMCore.emptyDb(NOW);
   assert.deepStrictEqual(db.classes.map(c => c.name),
