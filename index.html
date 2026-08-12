@@ -370,6 +370,14 @@ const LMCore = (() => {
     return { positions, scores };
   }
 
+  // v1.8: база вважається незайманою, поки користувач не вніс жодних власних даних —
+  // тільки такій базі дозволено автозасів (див. bootstrapSeed в #app)
+  function isPristine(db) {
+    if (!db || db.alliances.length !== 1 || db.items.length > 0) return false;
+    return Object.values(db.perAlliance).every(pa =>
+      pa.players.length === 0 && pa.history.length === 0 && pa.eventTypes.length === 0);
+  }
+
   // v1.5: імпорт складу альянсу з тексту гри
   // Формат: заголовок класу (можливо з емодзі) + рядки «N. Нік — Ур. LVL»
   function parseRoster(text) {
@@ -554,7 +562,7 @@ const LMCore = (() => {
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
            computeScores, historyLoad, distribute, topContributors, formatReport,
            buildRecords, mapCatalogRarity, validateCatalog, syncCatalog,
-           parseRoster, applyRoster };
+           parseRoster, applyRoster, isPristine };
 })();
 </script>
 
@@ -626,6 +634,8 @@ const I18N = {
     nickTaken: 'Такой ник уже занят.',
     playerHasHistory: 'У игрока есть записи в истории — только деактивация (снимите галочку «Активен»).',
     delPlayerConfirm: n => 'Удалить игрока «' + n + '»?',
+    seedDone: (a, p, i) => 'Загружены данные альянса «' + a + '»: ' + p + ' игроков, ' +
+      i + ' предметов ✓',
     syncCatalogBtn: '🔄 Синхронизировать с каталогом',
     syncDone: (a, u) => 'Каталог: +' + a + ' новых, ' + u + ' обновлено ✓',
     syncPickHint: 'Файл data/loot.json недоступен автоматически — выберите его вручную.',
@@ -712,6 +722,8 @@ const I18N = {
     nickTaken: 'This nickname is taken.',
     playerHasHistory: 'This player has history records — deactivate instead (uncheck "Active").',
     delPlayerConfirm: n => 'Delete player "' + n + '"?',
+    seedDone: (a, p, i) => 'Loaded alliance "' + a + '" data: ' + p + ' players, ' +
+      i + ' items ✓',
     syncCatalogBtn: '🔄 Sync with catalog',
     syncDone: (a, u) => 'Catalog: +' + a + ' new, ' + u + ' updated ✓',
     syncPickHint: 'data/loot.json is not reachable automatically — pick the file manually.',
@@ -1829,6 +1841,46 @@ function wireTab4() {
   });
 }
 
+/* ===== Автозасів (v1.8) =====
+   Порожня база наповнюється складом і каталогом із сусідніх файлів:
+   data/seed.json (альянс, гравці, типи івентів) + data/loot.json (предмети).
+   Чужі дані ніколи не чіпаються: працює лише коли LMCore.isPristine(db) === true.
+   На file:// fetch недоступний — засів тихо пропускається, все вноситься вручну. */
+async function bootstrapSeed() {
+  if (!LMCore.isPristine(db)) return;
+  let seeded = false, players = 0, items = 0, allianceName = '';
+  try {
+    const r = await fetch('data/seed.json', { cache: 'no-store' });
+    if (r.ok) {
+      const seed = await r.json();
+      if (seed.allianceName) {
+        activeAlliance().name = seed.allianceName;
+        allianceName = seed.allianceName;
+      }
+      if (Array.isArray(seed.eventTypes)) pa().eventTypes.push(...seed.eventTypes);
+      const parsed = LMCore.parseRoster(seed.roster || '');
+      if (parsed.ok) {
+        const res = LMCore.applyRoster(pa().players, db.classes, parsed.groups, nowISO());
+        players = res.addedPlayers;
+      }
+      seeded = true;
+    }
+  } catch (e) { /* немає файлу або file:// — працюємо з порожньою базою */ }
+  try {
+    const r = await fetch('data/loot.json', { cache: 'no-store' });
+    if (r.ok) {
+      const catalog = await r.json();
+      if (LMCore.validateCatalog(catalog).ok) {
+        items = LMCore.syncCatalog(db.items, catalog).added;
+        seeded = true;
+      }
+    }
+  } catch (e) { /* каталогу поруч немає — не біда */ }
+  if (!seeded) return;
+  save(); renderAll();
+  banner(t('seedDone', allianceName || activeAlliance().name, players, items));
+}
+
 /* ===== Ініціалізація ===== */
 document.addEventListener('DOMContentLoaded', () => {
   db = load();
@@ -1848,6 +1900,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('nav.tabs .tab').forEach(b =>
     b.addEventListener('click', () => switchTab(Number(b.dataset.tab))));
   renderAll();
+  bootstrapSeed();
 });
 </script>
 </body>
