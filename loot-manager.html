@@ -145,6 +145,7 @@ details.sect > .sect-body { padding: 0 13px 13px; }
 <header class="appbar">
   <span class="brand">🎁 Loot Manager</span>
   <select id="allianceSelect" title="Активний альянс"></select>
+  <select id="langSelect" title="Язык / Language"></select>
   <button id="btnSettings" class="btn" title="Бази та налаштування">⚙️</button>
 </header>
 
@@ -833,6 +834,10 @@ function renderHeader() {
     '<option value="' + a.id + '"' + (a.id === db.activeAllianceId ? ' selected' : '') + '>' +
     escapeHtml(a.name) + '</option>').join('');
   sel.title = t('allianceTitle');
+  const ls = document.getElementById('langSelect');
+  ls.innerHTML = Object.keys(LANG_NAMES).map(code =>
+    '<option value="' + code + '"' + (code === lang() ? ' selected' : '') + '>' +
+    code.toUpperCase() + '</option>').join('');
   document.documentElement.lang = lang();
   document.getElementById('btnSettings').title = t('tab4');
   document.querySelectorAll('nav.tabs .tab').forEach(b => {
@@ -1833,6 +1838,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('allianceSelect').addEventListener('change', e => {
     db.activeAllianceId = e.target.value;
+    save(); renderAll();
+  });
+  document.getElementById('langSelect').addEventListener('change', e => {
+    db.settings.language = e.target.value;
     save(); renderAll();
   });
   document.getElementById('btnSettings').addEventListener('click', () => switchTab(4));
