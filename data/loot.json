@@ -1,0 +1,314 @@
+[
+ {
+  "uid": 1,
+  "ru": "Плетущий паутину подземный владыка",
+  "en": "Webweaver Cryptlord",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2211",
+  "confident": false,
+  "icon": "icons/loot_001.png",
+  "stats": [
+   [
+    "Защита",
+    "Defense",
+    "+180"
+   ],
+   [
+    "Снижение урона",
+    "DMG RED.",
+    "+6.2%"
+   ]
+  ]
+ },
+ {
+  "uid": 2,
+  "ru": "Гидра тёмного прилива",
+  "en": "Darktide Hydra",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2219_1",
+  "confident": true,
+  "icon": "icons/loot_002.png",
+  "stats": [
+   [
+    "Уклонение",
+    "Evasion",
+    "+180"
+   ],
+   [
+    "Бонус здоровья",
+    "HP Bonus",
+    "+3.8%"
+   ]
+  ]
+ },
+ {
+  "uid": 3,
+  "ru": "Громовая ящерица",
+  "en": "Thunder Lizard",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2214",
+  "confident": true,
+  "icon": "icons/loot_003.png",
+  "stats": [
+   [
+    "Защита",
+    "Defense",
+    "+180"
+   ],
+   [
+    "Бонус пробивания",
+    "Penetration Bonus",
+    "+7.7%"
+   ]
+  ]
+ },
+ {
+  "uid": 4,
+  "ru": "Тираннозавр",
+  "en": "Tyrannosaur",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2215",
+  "confident": true,
+  "icon": "icons/loot_004.png",
+  "stats": [
+   [
+    "Уклонение",
+    "Evasion",
+    "+180"
+   ],
+   [
+    "Бонус крита",
+    "Crit Bonus",
+    "+10.2%"
+   ]
+  ]
+ },
+ {
+  "uid": 5,
+  "ru": "Обсидиановая статуя",
+  "en": "Obsidian",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2207_1",
+  "confident": false,
+  "icon": "icons/loot_005.png",
+  "stats": [
+   [
+    "Атака",
+    "Attack",
+    "+180"
+   ],
+   [
+    "Бонус здоровья",
+    "HP Bonus",
+    "+3.8%"
+   ]
+  ]
+ },
+ {
+  "uid": 6,
+  "ru": "Подземный владыка",
+  "en": "Cryptlord",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2216",
+  "confident": false,
+  "icon": "icons/loot_006.png",
+  "stats": [
+   [
+    "Пробивание",
+    "Penetration",
+    "+180"
+   ],
+   [
+    "Бонус уклонения",
+    "Evasion Bonus",
+    "+10.2%"
+   ]
+  ]
+ },
+ {
+  "uid": 7,
+  "ru": "Разъярённый тираннозавр",
+  "en": "Wrath Tyrannosaur",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2215_2",
+  "confident": true,
+  "icon": "icons/loot_007.png",
+  "stats": [
+   [
+    "Пробивание",
+    "Penetration",
+    "+180"
+   ],
+   [
+    "Бонус к урону",
+    "Damage Bonus",
+    "+6.2%"
+   ]
+  ]
+ },
+ {
+  "uid": 8,
+  "ru": "Поглощающий магию обсидиановый голем",
+  "en": "Spellbound",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2226",
+  "confident": false,
+  "icon": "icons/loot_008.png",
+  "stats": [
+   [
+    "Крит",
+    "Crit",
+    "+180"
+   ],
+   [
+    "Бонус атаки",
+    "Attack Bonus",
+    "+3.8%"
+   ]
+  ]
+ },
+ {
+  "uid": 9,
+  "ru": "Орк-командир",
+  "en": "Orc Captain",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "2203",
+  "confident": true,
+  "icon": "icons/loot_009.png",
+  "stats": [
+   [
+    "Уклонение",
+    "Evasion",
+    "+100"
+   ],
+   [
+    "Снижение урона",
+    "DMG RED.",
+    "+4.5%"
+   ]
+  ]
+ },
+ {
+  "uid": 10,
+  "ru": "Тотем гнева ветра",
+  "en": "Windfury",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "",
+  "confident": false,
+  "icon": "",
+  "stats": [
+   [
+    "Антикрит",
+    "Crit RES",
+    "+100"
+   ],
+   [
+    "Бонус к защите",
+    "Defense Bonus",
+    "+5.5%"
+   ]
+  ]
+ },
+ {
+  "uid": 11,
+  "ru": "Орк-шаман",
+  "en": "Orc Shaman",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "",
+  "confident": false,
+  "icon": "",
+  "stats": [
+   [
+    "Крит",
+    "Crit",
+    "+100"
+   ],
+   [
+    "Бонус крита",
+    "Crit Bonus",
+    "+7.4%"
+   ]
+  ]
+ },
+ {
+  "uid": 12,
+  "ru": "Орк-чернокнижник",
+  "en": "Orc Warlock",
+  "rarity": 4,
+  "rarity_ru": "Уник.",
+  "rarity_en": "Unique",
+  "creature": "",
+  "confident": false,
+  "icon": "",
+  "stats": [
+   [
+    "Меткость",
+    "Hit Rating",
+    "+100"
+   ],
+   [
+    "Бонус к урону",
+    "Damage Bonus",
+    "+4.5%"
+   ]
+  ]
+ },
+ {
+  "uid": 13,
+  "ru": "Сундук (выбор): герб Песчаного моря I",
+  "en": "Sand Sea Emblem Selection Box I",
+  "rarity": 3,
+  "rarity_ru": "Эпич.",
+  "rarity_en": "Epic",
+  "creature": "",
+  "confident": false,
+  "icon": "",
+  "stats": []
+ },
+ {
+  "uid": 14,
+  "ru": "Сундук (выбор): герб Песчаного моря II",
+  "en": "Sand Sea Emblem Selection Box II",
+  "rarity": 3,
+  "rarity_ru": "Эпич.",
+  "rarity_en": "Epic",
+  "creature": "",
+  "confident": false,
+  "icon": "",
+  "stats": []
+ },
+ {
+  "uid": 15,
+  "ru": "Сундук (выбор): герб Песчаного моря III",
+  "en": "Sand Sea Emblem Selection Box III",
+  "rarity": 3,
+  "rarity_ru": "Эпич.",
+  "rarity_en": "Epic",
+  "creature": "",
+  "confident": false,
+  "icon": "",
+  "stats": []
+ }
+]

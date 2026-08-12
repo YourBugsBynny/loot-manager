@@ -1,0 +1,1854 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loot Manager</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #1c2330; --muted: #68718a;
+  --line: #dde1ea; --accent: #2f6fed; --accent-ink: #ffffff;
+  --danger: #c93030; --ok: #1d8f4e; --warn-bg: #fff6e5;
+  --r-common: #8a93a8; --r-rare: #2f8fd8; --r-epic: #9b59d0; --r-legendary: #e8912b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg); color: var(--ink); font-size: 16px; line-height: 1.4;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+h2 { font-size: 1.05rem; margin: 18px 0 8px; }
+h2:first-child { margin-top: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+
+#banner {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 100; max-width: min(92vw, 560px);
+  background: var(--ink); color: #fff; border-radius: 10px;
+  padding: 10px 14px; display: flex; gap: 10px; align-items: center;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+}
+#banner button { background: none; border: 0; color: #fff; font-size: 1.1rem; cursor: pointer; }
+
+header.appbar {
+  position: sticky; top: 0; z-index: 20; background: var(--card);
+  border-bottom: 1px solid var(--line);
+  display: flex; gap: 8px; align-items: center; padding: 10px 12px;
+}
+header.appbar .brand { font-weight: 700; white-space: nowrap; }
+header.appbar select { flex: 1; min-width: 0; max-width: 320px; }
+nav.tabs {
+  position: sticky; top: 49px; z-index: 19; background: var(--card);
+  border-bottom: 1px solid var(--line);
+  display: flex; overflow-x: auto; white-space: nowrap; scrollbar-width: thin;
+}
+nav.tabs .tab {
+  border: 0; background: none; padding: 10px 14px; cursor: pointer;
+  color: var(--muted); border-bottom: 3px solid transparent; flex: 0 0 auto;
+}
+nav.tabs .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+main { padding: 12px; max-width: 980px; margin: 0 auto; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px; margin-bottom: 12px;
+}
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+
+.btn {
+  border: 1px solid var(--line); background: var(--card); border-radius: 9px;
+  padding: 8px 14px; cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-sm { padding: 4px 9px; font-size: 0.85rem; border-radius: 7px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+input[type="text"], input[type="number"], input[type="date"], input[type="search"], select, textarea {
+  border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: var(--card);
+  max-width: 100%;
+}
+input[type="number"] { width: 90px; }
+textarea { width: 100%; }
+label.inline { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+
+.badge {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 0.75rem; color: #fff; vertical-align: middle;
+}
+.badge.common { background: var(--r-common); }
+.badge.rare { background: var(--r-rare); }
+.badge.epic { background: var(--r-epic); }
+.badge.legendary { background: var(--r-legendary); }
+.badge.info { background: var(--accent); }
+.badge.plain { background: var(--muted); }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.dot.common { background: var(--r-common); }
+.dot.rare { background: var(--r-rare); }
+.dot.epic { background: var(--r-epic); }
+.dot.legendary { background: var(--r-legendary); }
+.item-ico { width: 22px; height: 22px; object-fit: contain; vertical-align: -5px;
+  border-radius: 4px; margin-right: 4px; }
+.tile-label .item-ico { margin-right: 0; }
+
+.tile-grid { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  margin-top: 6px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  padding: 0; cursor: pointer; overflow: hidden; }
+.tile:hover, .tile:focus-visible { border-color: var(--accent); }
+.tile img { display: block; max-width: min(210px, 44vw); max-height: 132px; }
+.tile .tile-label { display: none; padding: 5px 12px; font-size: 0.88rem;
+  align-items: center; gap: 6px; }
+.tile.no-img .tile-label { display: inline-flex; }
+
+.roster-row { display: flex; gap: 10px; align-items: center; padding: 7px 4px;
+  border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.roster-row:last-child { border-bottom: 0; }
+.roster-row .nick { min-width: 130px; font-weight: 600; }
+.roster-row.absent .nick { color: var(--muted); font-weight: 400; }
+.metrics { display: flex; gap: 6px; flex-wrap: wrap; }
+.metrics label { display: flex; flex-direction: column; font-size: 0.72rem; color: var(--muted); }
+
+.pos-row { padding: 9px 4px; border-bottom: 1px solid var(--line); }
+.pos-row:last-child { border-bottom: 0; }
+.pos-row .pos-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cancelled { text-decoration: line-through; opacity: .55; }
+
+.claims-cards { display: none; }
+@media (max-width: 699px) {
+  .claims-table { display: none; }
+  .claims-cards { display: block; }
+  header.appbar .brand { display: none; }
+}
+details.sect { border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  margin-bottom: 10px; }
+details.sect > summary { cursor: pointer; padding: 11px 13px; font-weight: 600; }
+details.sect > .sect-body { padding: 0 13px 13px; }
+</style>
+</head>
+<body>
+<noscript>Для роботи Loot Manager потрібен увімкнений JavaScript.</noscript>
+
+<div id="banner" hidden><span id="bannerMsg"></span><button id="bannerClose" title="Закрити">×</button></div>
+
+<header class="appbar">
+  <span class="brand">🎁 Loot Manager</span>
+  <select id="allianceSelect" title="Активний альянс"></select>
+  <select id="langSelect" title="Язык / Language"></select>
+  <button id="btnSettings" class="btn" title="Бази та налаштування">⚙️</button>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="1">1. Подія та вклад</button>
+  <button class="tab" data-tab="2">2. Здобич і заявки</button>
+  <button class="tab" data-tab="3">3. Розподіл</button>
+  <button class="tab" data-tab="4">4. Бази та налаштування</button>
+</nav>
+
+<main>
+  <section id="tab1"></section>
+  <section id="tab2" hidden></section>
+  <section id="tab3" hidden></section>
+  <section id="tab4" hidden></section>
+</main>
+
+<script id="core">
+'use strict';
+const LMCore = (() => {
+  const DEFAULTS = Object.freeze({
+    scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
+    historyDays: 14, wWon: 50,
+    rarityWeights: Object.freeze({ common: 1, rare: 2, epic: 4, legendary: 8 }),
+    webhookUrl: '', language: 'ru'
+  });
+  const LANGS = Object.freeze(['ru', 'en']);
+  const RARITY_RANK = Object.freeze({ common: 1, rare: 2, epic: 3, legendary: 4 });
+  function uuid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+  function defaultSettings() {
+    return { ...DEFAULTS, rarityWeights: { ...DEFAULTS.rarityWeights } };
+  }
+
+  // v1.5: реальні класи гри (склад альянсу замовника)
+  const CLASS_SEED = [
+    ['Маг', 0.8, 0.1, 0.1], ['Воин', 0.3, 0.6, 0.1], ['Жрец', 0.1, 0.1, 0.8],
+    ['Разбойник', 0.8, 0.1, 0.1], ['Лучник', 0.8, 0.1, 0.1]
+  ];
+  // ваги для автостворюваних класів при імпорті складу (за назвою, без регістру)
+  const CLASS_WEIGHT_HINTS = {
+    'воин': [0.3, 0.6, 0.1], 'жрец': [0.1, 0.1, 0.8],
+    'танк': [0.2, 0.7, 0.1], 'хил': [0.1, 0.1, 0.8]
+  };
+
+  function emptyAllianceData() {
+    return { players: [], history: [], eventTypes: [], draftSession: null };
+  }
+
+  function emptyDb(nowISO) {
+    const alliance = { id: uuid(), name: 'Мой альянс', createdAt: nowISO };
+    return {
+      schemaVersion: 1,
+      activeAllianceId: alliance.id,
+      settings: defaultSettings(),
+      classes: CLASS_SEED.map(([name, wDmg, wTaken, wHeal]) =>
+        ({ id: uuid(), name, wDmg, wTaken, wHeal, isArchived: false })),
+      items: [],
+      alliances: [alliance],
+      perAlliance: { [alliance.id]: emptyAllianceData() }
+    };
+  }
+
+  function migrate(db) {
+    if (db.schemaVersion === 1) {
+      // v1.2: мова лише ru|en; відсутня чи невідома (зокрема стара uk) → ru
+      if (db.settings && !LANGS.includes(db.settings.language)) db.settings.language = 'ru';
+      return { ok: true, db };
+    }
+    return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
+  }
+
+  function validateImport(raw) {
+    const fail = (error) => ({ ok: false, error });
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return fail('очікується JSON-об\'єкт бази');
+    }
+    if (typeof raw.schemaVersion !== 'number') return fail('відсутній schemaVersion');
+    if (!Array.isArray(raw.alliances) || raw.alliances.length === 0) {
+      return fail('список альянсів порожній або відсутній');
+    }
+    if (raw.alliances.some(a => !a || typeof a.id !== 'string' || typeof a.name !== 'string')) {
+      return fail('запис альянсу без id або name');
+    }
+    if (!raw.alliances.some(a => a.id === raw.activeAllianceId)) {
+      return fail('activeAllianceId не вказує на жоден альянс');
+    }
+    if (!raw.settings || typeof raw.settings !== 'object') return fail('відсутні settings');
+    if (!Array.isArray(raw.classes)) return fail('відсутній довідник класів');
+    if (!Array.isArray(raw.items)) return fail('відсутній каталог предметів');
+    if (!raw.perAlliance || typeof raw.perAlliance !== 'object') {
+      return fail('відсутній блок perAlliance');
+    }
+    for (const a of raw.alliances) {
+      const pa = raw.perAlliance[a.id];
+      if (!pa || !Array.isArray(pa.players) || !Array.isArray(pa.history) ||
+          !Array.isArray(pa.eventTypes)) {
+        return fail('немає даних perAlliance для альянсу «' + a.name + '»');
+      }
+    }
+    return migrate(raw);
+  }
+
+  // ТЗ §5.2: бал вкладу 0–100 лише для присутніх гравців
+  function computeScores(session, playersById, classesById, settings) {
+    const scores = {};
+    const present = Object.keys(session.presence || {})
+      .filter(pid => session.presence[pid] && session.presence[pid].present &&
+        playersById[pid] && playersById[pid].isActive !== false);   // вибулі не рахуються
+    if (session.mode === 'simple') {
+      for (const pid of present) {
+        scores[pid] = session.presence[pid].top ? settings.scoreTop : settings.scorePresent;
+      }
+      return scores;
+    }
+    const num = v => Number(v) || 0;
+    let maxD = 0, maxT = 0, maxH = 0;
+    for (const pid of present) {
+      const p = session.presence[pid];
+      maxD = Math.max(maxD, num(p.damage));
+      maxT = Math.max(maxT, num(p.taken));
+      maxH = Math.max(maxH, num(p.heal));
+    }
+    for (const pid of present) {
+      const p = session.presence[pid];
+      const cls = classesById[playersById[pid].classId] || { wDmg: 0, wTaken: 0, wHeal: 0 };
+      const nD = maxD > 0 ? num(p.damage) / maxD : 0;
+      const nT = maxT > 0 ? num(p.taken) / maxT : 0;
+      const nH = maxH > 0 ? num(p.heal) / maxH : 0;
+      scores[pid] = 100 * (cls.wDmg * nD + cls.wTaken * nT + cls.wHeal * nH);
+    }
+    return scores;
+  }
+
+  // ТЗ §5.4: анти-жадібність — сума ваг рідкості отриманого за вікно historyDays
+  function historyLoad(history, itemsById, playerId, nowISO, settings) {
+    const cutoff = Date.parse(nowISO) - settings.historyDays * 86400000;
+    let sum = 0;
+    for (const r of history) {
+      if (r.playerId !== playerId || r.cancelled) continue;
+      if (Date.parse(r.timestamp) < cutoff) continue;
+      const item = itemsById[r.itemId];
+      const w = item && settings.rarityWeights[item.rarity] !== undefined
+        ? settings.rarityWeights[item.rarity] : 1;
+      sum += w * (r.quantity || 1);
+    }
+    return sum;
+  }
+
+  // ТЗ §5.3–5.7: черга пріоритетів; overrides — ручні рішення, rollMemo — стабільність ролів
+  function distribute(ctx) {
+    const { session, playersById, classesById, itemsById, history, settings,
+            nowISO, overrides, rollMemo } = ctx;
+    const rng = ctx.rng || Math.random;
+    const scores = computeScores(session, playersById, classesById, settings);
+    const presentIds = Object.keys(scores);
+    const loadCache = new Map();
+    const loadOf = pid => {
+      if (!loadCache.has(pid)) {
+        loadCache.set(pid, historyLoad(history, itemsById, pid, nowISO, settings));
+      }
+      return loadCache.get(pid);
+    };
+    const drops = (session.drops || [])
+      .map((d, idx) => ({ ...d, idx,
+        rank: (itemsById[d.itemId] && RARITY_RANK[itemsById[d.itemId].rarity]) || 0 }))
+      .sort((a, b) => b.rank - a.rank || a.idx - b.idx);
+    const wonCount = {};   // pid → штук виграно в сеансі (wWon-штраф)
+    const wonItem = {};    // pid → Set(itemId): правило «одна штука предмета на гравця»
+    const positions = [];
+    for (const d of drops) {
+      const item = itemsById[d.itemId];
+      if (!item) continue;
+      const qty = Math.max(1, Number(d.quantity) || 1);
+      const hasClassBonus = pid => item.targetClasses.length > 0 &&
+        item.targetClasses.includes(playersById[pid].classId);
+      for (let copy = 0; copy < qty; copy++) {
+        const key = d.itemId + '#' + copy;
+        const prioOf = pid => scores[pid]
+          + (hasClassBonus(pid) ? settings.pClass : 0)
+          - settings.kPenalty * loadOf(pid)
+          - settings.wWon * (wonCount[pid] || 0);
+        const cands = presentIds
+          .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
+                         session.claims[pid].includes(d.itemId))
+          .filter(pid => !(wonItem[pid] && wonItem[pid].has(d.itemId)))
+          .map(pid => ({ playerId: pid, priority: prioOf(pid) }))
+          .sort((a, b) => b.priority - a.priority);
+        const manualWinner = overrides && overrides[key];
+        let winnerId = null, priority = null, rolled = false, manual = false;
+        if (manualWinner && playersById[manualWinner] && scores[manualWinner] !== undefined) {
+          winnerId = manualWinner; manual = true;
+          const c = cands.find(x => x.playerId === manualWinner);
+          priority = c ? c.priority : null;
+        } else if (cands.length > 0) {
+          const top = cands[0].priority;
+          const leaders = cands.filter(c => top - c.priority < 0.001);
+          if (leaders.length > 1) {
+            rolled = true;
+            const memoWinner = rollMemo && rollMemo[key];
+            const chosen = (memoWinner && leaders.some(l => l.playerId === memoWinner))
+              ? leaders.find(l => l.playerId === memoWinner)
+              : leaders[Math.floor(rng() * leaders.length)];
+            winnerId = chosen.playerId; priority = chosen.priority;
+          } else {
+            winnerId = leaders[0].playerId; priority = leaders[0].priority;
+          }
+        }
+        if (winnerId) {
+          wonCount[winnerId] = (wonCount[winnerId] || 0) + 1;
+          (wonItem[winnerId] = wonItem[winnerId] || new Set()).add(d.itemId);
+        }
+        positions.push({ key, itemId: d.itemId, copyIndex: copy, winnerId, priority,
+          rolled, manual, classBonus: winnerId ? hasClassBonus(winnerId) : false,
+          candidates: cands });
+      }
+    }
+    return { positions, scores };
+  }
+
+  // v1.5: імпорт складу альянсу з тексту гри
+  // Формат: заголовок класу (можливо з емодзі) + рядки «N. Нік — Ур. LVL»
+  function parseRoster(text) {
+    const lines = String(text || '').split(/\r?\n/);
+    const playerRe = /^\s*\d+[.)]\s*(.+?)\s*[—–-]+\s*Ур\.?\s*(\d+)\s*$/u;
+    const groups = [];
+    let current = null;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      const m = line.match(playerRe);
+      if (m) {
+        if (!current) {
+          return { ok: false, error: 'гравець до першого заголовка класу: «' + line + '»' };
+        }
+        current.players.push({ nickname: m[1].trim(), level: Number(m[2]) });
+      } else {
+        const className = line.replace(/^[^\p{L}]+/u, '').trim();
+        if (!className) continue;                    // рядок із самих емодзі/розділювачів
+        current = { className, players: [] };
+        groups.push(current);
+      }
+    }
+    const total = groups.reduce((s, g) => s + g.players.length, 0);
+    if (total === 0) return { ok: false, error: 'не розпізнано жодного гравця' };
+    return { ok: true, groups: groups.filter(g => g.players.length > 0) };
+  }
+
+  // Upsert гравців за ніком (без регістру) і класів за назвою; нічого не видаляє,
+  // роль та isActive наявних гравців не чіпає.
+  function applyRoster(players, classes, groups, nowISO) {
+    let addedPlayers = 0, updatedPlayers = 0, addedClasses = 0;
+    for (const g of groups) {
+      let cls = classes.find(c => c.name.toLowerCase() === g.className.toLowerCase());
+      if (!cls) {
+        const w = CLASS_WEIGHT_HINTS[g.className.toLowerCase()] || [0.8, 0.1, 0.1];
+        cls = { id: uuid(), name: g.className, wDmg: w[0], wTaken: w[1], wHeal: w[2],
+          isArchived: false };
+        classes.push(cls); addedClasses++;
+      }
+      for (const rp of g.players) {
+        const existing = players.find(p =>
+          p.nickname.toLowerCase() === rp.nickname.toLowerCase());
+        if (existing) {
+          existing.classId = cls.id; existing.level = rp.level; updatedPlayers++;
+        } else {
+          players.push({ id: uuid(), nickname: rp.nickname, classId: cls.id,
+            role: 'Учасник', isActive: true, level: rp.level, createdAt: nowISO });
+          addedPlayers++;
+        }
+      }
+    }
+    return { addedPlayers, updatedPlayers, addedClasses };
+  }
+
+  // v1.4: інтеграція з каталогом предметів (data/loot.json інструмента вилучення зображень)
+  function mapCatalogRarity(n) {
+    if (n >= 4) return 'legendary';
+    if (n === 3) return 'epic';
+    if (n === 2) return 'rare';
+    return 'common';
+  }
+  function validateCatalog(raw) {
+    if (!Array.isArray(raw)) return { ok: false, error: 'очікується масив каталогу' };
+    for (const e of raw) {
+      if (!e || typeof e.uid !== 'number' || typeof e.ru !== 'string' || !e.ru) {
+        return { ok: false, error: 'запис каталогу без uid або ru-назви' };
+      }
+    }
+    return { ok: true };
+  }
+  // Upsert у items: за catalogUid; ручні предмети з тією ж назвою усиновлюються, не дублюються.
+  // Нічого не видаляє; повертає {added, updated}.
+  function syncCatalog(items, catalog) {
+    let added = 0, updated = 0;
+    for (const c of catalog) {
+      let item = items.find(i => i.catalogUid === c.uid);
+      if (!item) {
+        item = items.find(i => (i.catalogUid === undefined || i.catalogUid === null) &&
+          i.name.toLowerCase() === c.ru.toLowerCase());
+      }
+      const fields = {
+        catalogUid: c.uid, name: c.ru, nameEn: c.en || '', icon: c.icon || '',
+        rarity: mapCatalogRarity(c.rarity),
+        rarityLabelRu: c.rarity_ru || '', rarityLabelEn: c.rarity_en || ''
+      };
+      if (item) { Object.assign(item, fields); updated++; }
+      else {
+        items.push(Object.assign({ id: uuid(), category: 'Інше', targetClasses: [],
+          isArchived: false }, fields));
+        added++;
+      }
+    }
+    return { added, updated };
+  }
+
+  // ТЗ §6: «ТОП Вклад» — простий режим: прапорці; розширений: максимум балу
+  function topContributors(session, scores) {
+    if (session.mode === 'simple') {
+      return new Set(Object.keys(scores)
+        .filter(pid => session.presence[pid] && session.presence[pid].top));
+    }
+    const vals = Object.values(scores);
+    if (vals.length === 0) return new Set();
+    const max = Math.max(...vals);
+    return new Set(Object.keys(scores).filter(pid => scores[pid] === max));
+  }
+
+  // v1.2: фіксовані рядки звіту — російська (дефолт) та англійська
+  const REPORT_I18N = Object.freeze({
+    ru: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (' + e + ')',
+          pcs: 'шт.', top: 'ТОП Вклад', free: '[Свободный остаток]',
+          footer: 'Спасибо всем за участие! Предметы ждут в магазине альянса.' },
+    en: { header: (a, e) => '📜 [ALLIANCE: ' + a + '] LOOT DISTRIBUTION (' + e + ')',
+          pcs: 'pcs', top: 'TOP Contribution', free: '[Unclaimed]',
+          footer: 'Thanks everyone for participating! Items are waiting in the alliance shop.' }
+  });
+
+  // ТЗ §6: рядок на предмет; кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
+  function formatReport({ allianceName, eventTypeName, positions, itemsById,
+                          playersById, classesById, topSet, lang }) {
+    const L = REPORT_I18N[lang] || REPORT_I18N.ru;
+    const byItem = [];       // порядок першої появи предмета
+    const groups = new Map();
+    for (const pos of positions) {
+      if (!groups.has(pos.itemId)) { groups.set(pos.itemId, []); byItem.push(pos.itemId); }
+      groups.get(pos.itemId).push(pos);
+    }
+    const lines = [];
+    for (const itemId of byItem) {
+      const item = itemsById[itemId];
+      const posList = groups.get(itemId);
+      const entries = [];
+      let freeCount = 0;
+      for (const pos of posList) {
+        if (!pos.winnerId) { freeCount++; continue; }
+        const player = playersById[pos.winnerId];
+        const cls = player && classesById[player.classId];
+        const nick = player ? player.nickname : '?';
+        const clsName = cls ? cls.name : '?';
+        const topMark = topSet.has(pos.winnerId) ? ' | ' + L.top : '';
+        entries.push('@' + nick + ' [' + clsName + topMark + ']');
+      }
+      if (freeCount > 0) entries.push(L.free);
+      const displayName = item ? ((lang === 'en' && item.nameEn) ? item.nameEn : item.name) : '?';
+      lines.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
+        entries.join(', '));
+    }
+    return L.header(allianceName, eventTypeName) + '\n\n' +
+      lines.join('\n') + '\n\n' + L.footer;
+  }
+
+  // ТЗ §5.8, §3.3: групування позицій у записи історії зі снапшотами
+  function buildRecords({ positions, itemsById, playersById, scores, nowISO, eventTypeName }) {
+    const grouped = new Map();   // "pid|itemId" → {quantity, rolled, manual}
+    for (const pos of positions) {
+      if (!pos.winnerId) continue;
+      const k = pos.winnerId + '|' + pos.itemId;
+      const g = grouped.get(k) || { playerId: pos.winnerId, itemId: pos.itemId,
+        quantity: 0, rolled: false, manual: false };
+      g.quantity += 1;
+      g.rolled = g.rolled || pos.rolled;
+      g.manual = g.manual || pos.manual;
+      grouped.set(k, g);
+    }
+    return [...grouped.values()].map(g => ({
+      id: uuid(),
+      timestamp: nowISO,
+      eventTypeName,
+      itemId: g.itemId,
+      itemNameSnapshot: itemsById[g.itemId] ? itemsById[g.itemId].name : '?',
+      playerId: g.playerId,
+      playerNicknameSnapshot: playersById[g.playerId] ? playersById[g.playerId].nickname : '?',
+      quantity: g.quantity,
+      scoreAtDistribution: scores[g.playerId] !== undefined ? scores[g.playerId] : 0,
+      rolled: g.rolled,
+      manual: g.manual,
+      cancelled: false
+    }));
+  }
+
+  return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
+           computeScores, historyLoad, distribute, topContributors, formatReport,
+           buildRecords, mapCatalogRarity, validateCatalog, syncCatalog,
+           parseRoster, applyRoster };
+})();
+</script>
+
+<script id="app">
+'use strict';
+/* ===== Сховище та утиліти ===== */
+const STORAGE_KEY = 'lootManagerData';
+function nowISO() { return new Date().toISOString(); }
+function byId(arr) { return Object.fromEntries(arr.map(x => [x.id, x])); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+/* ===== i18n (v1.1): UI трьома мовами; мова звіту — в LMCore.REPORT_I18N ===== */
+const I18N = {
+  ru: {
+    tab1: '1. Событие и вклад', tab2: '2. Добыча и заявки', tab3: '3. Распределение',
+    tab4: '4. Базы и настройки', allianceTitle: 'Активный альянс',
+    lsUnavailable: m => 'LocalStorage недоступен: ' + m + '. Данные не сохранятся!',
+    dbNotLoaded: e => 'База не загружена: ' + e,
+    dbCorrupt: m => 'База повреждена, создана новая. Ошибка: ' + m,
+    saveFail: m => 'Не удалось сохранить (хранилище переполнено?): ' + m +
+      ' Сделайте экспорт JSON во вкладке 4!',
+    eventH2: 'Событие', eventPh: 'Тип события (напр., Вторжение монстров)',
+    modeLabel: 'Режим вклада:', modeSimple: 'Простой (ТОП)', modeAdvanced: 'Расширенный (числа)',
+    presenceH2: 'Присутствующие и вклад', allPresent: 'Все присутствуют', nonePresent: 'Снять всех',
+    classFilterLabel: 'Класс:', filterAll: 'Все',
+    present: 'Присутствует', topFlag: 'ТОП',
+    noPlayers: 'Нет активных игроков. Добавьте их во вкладке «4. Базы и настройки».',
+    filterEmpty: 'Игроков этого класса нет.',
+    dropsH2: 'Что выпало', itemPh: 'Название предмета', pcsShort: 'шт.', add: 'Добавить',
+    quickHint: 'Предмета нет в каталоге — создайте его:', qiNamePh: 'Название',
+    fitsLabel: 'Кому подходит (пусто = всем):', createAdd: 'Создать и добавить',
+    nothingAdded: 'Пока ничего не добавлено.', claimsH2: 'Заявки (кто что хочет)',
+    quickPick: 'Быстрый выбор:', moreItems: n => '+ ещё ' + n + ' — уточните поиск',
+    claimAutoPresent: 'Отметка «хочет» автоматически помечает игрока присутствующим (вклад — во вкладке 1).',
+    addLootFirst: 'Добавьте добычу выше, чтобы проставить заявки.', playerTh: 'Игрок',
+    enterItemName: 'Введите название предмета.', itemExists: 'Предмет с таким названием уже существует.',
+    calc: '⚖️ Рассчитать распределение',
+    calcHint: 'Нужны присутствующие игроки (вкладка 1) и добыча (вкладка 2).',
+    resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Свободный остаток',
+    classBonusBadge: 'класс-бонус', rollBadge: '🎲 ролл', manualBadge: 'ручное',
+    winnerLabel: 'Победитель:', autoOpt: '— авто —', claimantsGrp: 'Претенденты',
+    otherGrp: 'Другой присутствующий игрок', chatTextH2: 'Текст для чата',
+    copyBtn: '📋 Скопировать текст', confirmBtn: '✅ Подтвердить и сохранить',
+    copied: 'Скопировано ✓', copyFail: 'Не удалось скопировать — выделите текст вручную.',
+    confirmSave: 'Сохранить распределение в историю? Черновик сеанса будет очищен.',
+    savedToHistory: n => 'Сохранено в историю ✓ (' + n + ' записей)', defaultEvent: 'Событие',
+    sectAlliances: n => '🏰 Альянсы (' + n + ')', sectPlayers: n => '👥 Игроки (' + n + ')',
+    sectItems: n => '⚔️ Предметы — общий каталог (' + n + ')',
+    sectClasses: n => '🛡️ Классы (' + n + ')', sectEvents: n => '📅 Типы событий (' + n + ')',
+    sectHistory: n => '📜 История (' + n + ')', sectSettings: '⚙️ Настройки алгоритма',
+    sectBackup: '💾 Резервная копия', del: 'Удалить',
+    newAlliancePh: 'Название нового альянса', addAlliance: 'Добавить альянс',
+    enterAllianceName: 'Введите название альянса.',
+    allianceExists: 'Альянс с таким названием уже существует.',
+    lastAlliance: 'Последний альянс удалить нельзя.',
+    delAllianceConfirm: n => 'Удалить альянс «' + n + '» ВМЕСТЕ со всеми его игроками и ' +
+      'историей? Действие нельзя отменить.',
+    thNick: 'Ник', thClass: 'Класс', thStatus: 'Статус', thActive: 'Активен',
+    thLevel: 'Ур.',
+    importRosterBtn: '📋 Импортировать состав из текста',
+    rosterPh: 'Вставьте список из игры: заголовок класса («Маг», «🔨 Воин»…), ' +
+      'затем строки вида «1. Ник — Ур. 64». Существующие игроки обновятся, никто не удалится.',
+    rosterDone: (p, u, c) => 'Состав: +' + p + ' игроков, ' + u + ' обновлено, +' + c + ' классов ✓',
+    rosterFail: e => 'Импорт состава отклонён: ' + e,
+    nickPh: 'Никнейм', addPlayer: 'Добавить игрока', enterNick: 'Введите никнейм.',
+    nickExists: 'Игрок с таким ником уже есть в этом альянсе.',
+    nickTaken: 'Такой ник уже занят.',
+    playerHasHistory: 'У игрока есть записи в истории — только деактивация (снимите галочку «Активен»).',
+    delPlayerConfirm: n => 'Удалить игрока «' + n + '»?',
+    syncCatalogBtn: '🔄 Синхронизировать с каталогом',
+    syncDone: (a, u) => 'Каталог: +' + a + ' новых, ' + u + ' обновлено ✓',
+    syncPickHint: 'Файл data/loot.json недоступен автоматически — выберите его вручную.',
+    searchCatalogPh: 'Поиск в каталоге', thName: 'Название', thCategory: 'Категория',
+    thRarity: 'Редкость', thClasses: 'Классы', forAll: 'всем',
+    archive: 'Архивировать', unarchive: 'Разархивировать',
+    itemInHistory: 'Предмет фигурирует в истории — доступна только архивация.',
+    delItemConfirm: n => 'Удалить предмет «' + n + '» из каталога?',
+    newItemHint: 'Новый предмет добавляется во вкладке «2. Добыча и заявки» (форма быстрого создания).',
+    classNamePh: 'Название класса', addClass: 'Добавить класс (веса 0.8/0.1/0.1)',
+    enterClassName: 'Введите название класса.', classExists: 'Класс с таким названием уже существует.',
+    classHasPlayers: 'Есть игроки этого класса — доступна только архивация.',
+    delClassConfirm: n => 'Удалить класс «' + n + '»?',
+    eventsEmpty: 'Список пуст — названия добавляются автоматически при подтверждении распределения.',
+    allPlayersOpt: '— все игроки —', histFrom: 'с', histTo: 'по', noRecords: 'Записей нет.',
+    histScore: s => '(балл ' + s + ')', cancelRec: 'Отменить',
+    cancelRecConfirm: (i, n) => 'Отменить запись «' + i + ' → ' + n +
+      '»? Она перестанет влиять на анти-жадность.',
+    setScoreTop: 'Балл «ТОП»', setScorePresent: 'Балл присутствующего', setPClass: 'Класс-бонус P',
+    setKPenalty: 'Штраф истории K', setHistoryDays: 'Окно истории, дней',
+    setWWon: 'Штраф за выигрыш в сеансе',
+    rarityWeightsLabel: 'Веса редкости в анти-жадности:', resetDefaults: 'Сбросить к дефолтам',
+    resetConfirm: 'Вернуть все константы алгоритма к значениям по умолчанию?',
+    langLabel: 'Язык интерфейса и отчёта:',
+    exportBtn: '⬇️ Экспорт JSON', importBtn: '⬆️ Импорт JSON',
+    importHint: 'Импорт полностью заменяет базу после проверки формата и подтверждения.',
+    notJson: m => 'Файл не является корректным JSON: ' + m,
+    importRejected: e => 'Импорт отклонён: ' + e,
+    importConfirm: n => 'Заменить ВСЮ текущую базу содержимым файла «' + n + '»?',
+    imported: 'База импортирована ✓'
+  },
+  en: {
+    tab1: '1. Event & Contribution', tab2: '2. Loot & Claims', tab3: '3. Distribution',
+    tab4: '4. Data & Settings', allianceTitle: 'Active alliance',
+    lsUnavailable: m => 'LocalStorage is unavailable: ' + m + '. Data will not be saved!',
+    dbNotLoaded: e => 'Database not loaded: ' + e,
+    dbCorrupt: m => 'Database was corrupted, a new one was created. Error: ' + m,
+    saveFail: m => 'Failed to save (storage full?): ' + m + ' Export JSON on tab 4!',
+    eventH2: 'Event', eventPh: 'Event type (e.g., Monster Invasion)',
+    modeLabel: 'Contribution mode:', modeSimple: 'Simple (TOP)', modeAdvanced: 'Advanced (numbers)',
+    presenceH2: 'Attendance & contribution', allPresent: 'All present', nonePresent: 'Clear all',
+    classFilterLabel: 'Class:', filterAll: 'All',
+    present: 'Present', topFlag: 'TOP',
+    noPlayers: 'No active players. Add them on the "4. Data & Settings" tab.',
+    filterEmpty: 'No players of this class.',
+    dropsH2: 'Drops', itemPh: 'Item name', pcsShort: 'pcs', add: 'Add',
+    quickHint: 'Item is not in the catalog — create it:', qiNamePh: 'Name',
+    fitsLabel: 'Fits classes (empty = all):', createAdd: 'Create & add',
+    nothingAdded: 'Nothing added yet.', claimsH2: 'Claims (who wants what)',
+    quickPick: 'Quick pick:', moreItems: n => '+ ' + n + ' more — refine the search',
+    claimAutoPresent: 'Checking a claim automatically marks the player as present (contribution is on tab 1).',
+    addLootFirst: 'Add loot above to set claims.', playerTh: 'Player',
+    enterItemName: 'Enter an item name.', itemExists: 'An item with this name already exists.',
+    calc: '⚖️ Calculate distribution',
+    calcHint: 'Need present players (tab 1) and loot (tab 2).',
+    resultH2: 'Result', copyN: n => 'copy ' + n, freeLeft: 'Unclaimed',
+    classBonusBadge: 'class bonus', rollBadge: '🎲 roll', manualBadge: 'manual',
+    winnerLabel: 'Winner:', autoOpt: '— auto —', claimantsGrp: 'Claimants',
+    otherGrp: 'Other present player', chatTextH2: 'Chat text',
+    copyBtn: '📋 Copy text', confirmBtn: '✅ Confirm & save',
+    copied: 'Copied ✓', copyFail: 'Copy failed — select the text manually.',
+    confirmSave: 'Save this distribution to history? The session draft will be cleared.',
+    savedToHistory: n => 'Saved to history ✓ (' + n + ' records)', defaultEvent: 'Event',
+    sectAlliances: n => '🏰 Alliances (' + n + ')', sectPlayers: n => '👥 Players (' + n + ')',
+    sectItems: n => '⚔️ Items — shared catalog (' + n + ')',
+    sectClasses: n => '🛡️ Classes (' + n + ')', sectEvents: n => '📅 Event types (' + n + ')',
+    sectHistory: n => '📜 History (' + n + ')', sectSettings: '⚙️ Algorithm settings',
+    sectBackup: '💾 Backup', del: 'Delete',
+    newAlliancePh: 'New alliance name', addAlliance: 'Add alliance',
+    enterAllianceName: 'Enter an alliance name.',
+    allianceExists: 'An alliance with this name already exists.',
+    lastAlliance: 'The last alliance cannot be deleted.',
+    delAllianceConfirm: n => 'Delete alliance "' + n + '" TOGETHER with all its players and ' +
+      'history? This cannot be undone.',
+    thNick: 'Nickname', thClass: 'Class', thStatus: 'Role', thActive: 'Active',
+    thLevel: 'Lvl',
+    importRosterBtn: '📋 Import roster from text',
+    rosterPh: 'Paste the in-game list: a class header ("Маг", "🔨 Воин"…), ' +
+      'then lines like "1. Nick — Ур. 64". Existing players are updated, nobody is deleted.',
+    rosterDone: (p, u, c) => 'Roster: +' + p + ' players, ' + u + ' updated, +' + c + ' classes ✓',
+    rosterFail: e => 'Roster import rejected: ' + e,
+    nickPh: 'Nickname', addPlayer: 'Add player', enterNick: 'Enter a nickname.',
+    nickExists: 'A player with this nickname already exists in this alliance.',
+    nickTaken: 'This nickname is taken.',
+    playerHasHistory: 'This player has history records — deactivate instead (uncheck "Active").',
+    delPlayerConfirm: n => 'Delete player "' + n + '"?',
+    syncCatalogBtn: '🔄 Sync with catalog',
+    syncDone: (a, u) => 'Catalog: +' + a + ' new, ' + u + ' updated ✓',
+    syncPickHint: 'data/loot.json is not reachable automatically — pick the file manually.',
+    searchCatalogPh: 'Search the catalog', thName: 'Name', thCategory: 'Category',
+    thRarity: 'Rarity', thClasses: 'Classes', forAll: 'all',
+    archive: 'Archive', unarchive: 'Unarchive',
+    itemInHistory: 'This item appears in history — only archiving is available.',
+    delItemConfirm: n => 'Delete item "' + n + '" from the catalog?',
+    newItemHint: 'New items are added on the "2. Loot & Claims" tab (quick-create form).',
+    classNamePh: 'Class name', addClass: 'Add class (weights 0.8/0.1/0.1)',
+    enterClassName: 'Enter a class name.', classExists: 'A class with this name already exists.',
+    classHasPlayers: 'Players use this class — only archiving is available.',
+    delClassConfirm: n => 'Delete class "' + n + '"?',
+    eventsEmpty: 'The list is empty — names are added automatically when a distribution is confirmed.',
+    allPlayersOpt: '— all players —', histFrom: 'from', histTo: 'to', noRecords: 'No records.',
+    histScore: s => '(score ' + s + ')', cancelRec: 'Cancel',
+    cancelRecConfirm: (i, n) => 'Cancel the record "' + i + ' → ' + n +
+      '"? It will stop affecting anti-greed.',
+    setScoreTop: '"TOP" score', setScorePresent: 'Present score', setPClass: 'Class bonus P',
+    setKPenalty: 'History penalty K', setHistoryDays: 'History window, days',
+    setWWon: 'Penalty per session win',
+    rarityWeightsLabel: 'Rarity weights in anti-greed:', resetDefaults: 'Reset to defaults',
+    resetConfirm: 'Reset all algorithm constants to their defaults?',
+    langLabel: 'Interface & report language:',
+    exportBtn: '⬇️ Export JSON', importBtn: '⬆️ Import JSON',
+    importHint: 'Import fully replaces the database after format validation and confirmation.',
+    notJson: m => 'The file is not valid JSON: ' + m,
+    importRejected: e => 'Import rejected: ' + e,
+    importConfirm: n => 'Replace the ENTIRE current database with the contents of "' + n + '"?',
+    imported: 'Database imported ✓'
+  }
+};
+const LANG_NAMES = { ru: 'Русский', en: 'English' };
+function lang() { return (db && db.settings && db.settings.language) || 'ru'; }
+function t(key, ...args) {
+  const v = (I18N[lang()] && I18N[lang()][key]) !== undefined
+    ? I18N[lang()][key] : I18N.ru[key];
+  return typeof v === 'function' ? v(...args) : (v !== undefined ? v : key);
+}
+const ROLE_LABELS = { 'Офіцер': { ru: 'Офицер', en: 'Officer' },
+  'Ветеран': { ru: 'Ветеран', en: 'Veteran' },
+  'Учасник': { ru: 'Участник', en: 'Member' } };
+const CAT_LABELS = { 'Зброя': { ru: 'Оружие', en: 'Weapon' },
+  'Броня': { ru: 'Броня', en: 'Armor' },
+  'Біжутерія': { ru: 'Бижутерия', en: 'Jewelry' },
+  'Ресурси': { ru: 'Ресурсы', en: 'Resources' },
+  'Інше': { ru: 'Прочее', en: 'Other' } };
+const RARITY_LABELS = { common: { ru: 'Обычный', en: 'Common' },
+  rare: { ru: 'Редкий', en: 'Rare' },
+  epic: { ru: 'Эпический', en: 'Epic' },
+  legendary: { ru: 'Легендарный', en: 'Legendary' } };
+function roleLabel(v) { return (ROLE_LABELS[v] && ROLE_LABELS[v][lang()]) || v; }
+function catLabel(v) { return (CAT_LABELS[v] && CAT_LABELS[v][lang()]) || v; }
+function rarityLabel(v) { return (RARITY_LABELS[v] && RARITY_LABELS[v][lang()]) || v; }
+
+function banner(msg) {
+  const el = document.getElementById('banner');
+  document.getElementById('bannerMsg').textContent = msg;
+  el.hidden = false;
+  clearTimeout(banner._t);
+  banner._t = setTimeout(() => { el.hidden = true; }, 6000);
+}
+function load() {
+  let raw = null;
+  try { raw = localStorage.getItem(STORAGE_KEY); }
+  catch (e) { banner(t('lsUnavailable', e.message)); }
+  if (!raw) return LMCore.emptyDb(nowISO());
+  try {
+    const parsed = JSON.parse(raw);
+    const mig = LMCore.migrate(parsed);
+    if (!mig.ok) { banner(t('dbNotLoaded', mig.error)); return LMCore.emptyDb(nowISO()); }
+    return mig.db;
+  } catch (e) {
+    banner(t('dbCorrupt', e.message));
+    return LMCore.emptyDb(nowISO());
+  }
+}
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+  catch (e) { banner(t('saveFail', e.message)); }
+}
+
+/* ===== Стан ===== */
+let db = null;
+const ui = { activeTab: 1, classFilter: '' };   // classFilter: '' = всі класи
+
+/* Спільний фільтр за класами для вкладок 1, 2 і 4 (v1.7) */
+function classFilterMatch(p) { return !ui.classFilter || p.classId === ui.classFilter; }
+function classFilterBar() {
+  const btn = (val, label) => '<button type="button" class="btn btn-sm classFilterBtn' +
+    (ui.classFilter === val ? ' active' : '') + '" data-cls="' + val + '">' +
+    escapeHtml(label) + '</button>';
+  return '<div class="row" style="margin:6px 0 8px"><span class="muted small">' +
+    t('classFilterLabel') + '</span>' + btn('', t('filterAll')) +
+    db.classes.filter(c => !c.isArchived).map(c => btn(c.id, c.name)).join('') + '</div>';
+}
+function wireClassFilter(container, rerender) {
+  container.querySelectorAll('.classFilterBtn').forEach(b =>
+    b.addEventListener('click', () => { ui.classFilter = b.dataset.cls; rerender(); }));
+}
+
+function activeAlliance() { return db.alliances.find(a => a.id === db.activeAllianceId); }
+function pa() { return db.perAlliance[db.activeAllianceId]; }
+function draft() {
+  const data = pa();
+  if (!data.draftSession) {
+    data.draftSession = { eventTypeName: '', mode: 'simple', presence: {},
+      drops: [], claims: {}, overrides: {}, rollMemo: {} };
+  }
+  const d = data.draftSession;
+  if (!d.overrides) d.overrides = {};
+  if (!d.rollMemo) d.rollMemo = {};
+  return d;
+}
+
+/* ===== Каркас: шапка та вкладки ===== */
+function renderHeader() {
+  const sel = document.getElementById('allianceSelect');
+  sel.innerHTML = db.alliances.map(a =>
+    '<option value="' + a.id + '"' + (a.id === db.activeAllianceId ? ' selected' : '') + '>' +
+    escapeHtml(a.name) + '</option>').join('');
+  sel.title = t('allianceTitle');
+  const ls = document.getElementById('langSelect');
+  ls.innerHTML = Object.keys(LANG_NAMES).map(code =>
+    '<option value="' + code + '"' + (code === lang() ? ' selected' : '') + '>' +
+    code.toUpperCase() + '</option>').join('');
+  document.documentElement.lang = lang();
+  document.getElementById('btnSettings').title = t('tab4');
+  document.querySelectorAll('nav.tabs .tab').forEach(b => {
+    b.textContent = t('tab' + b.dataset.tab);
+  });
+}
+function switchTab(n) {
+  ui.activeTab = n;
+  document.querySelectorAll('nav.tabs .tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === String(n)));
+  for (let i = 1; i <= 4; i++) document.getElementById('tab' + i).hidden = (i !== n);
+  renderActiveTab();
+}
+function renderActiveTab() {
+  [null, renderTab1, renderTab2, renderTab3, renderTab4][ui.activeTab]();
+}
+function renderAll() { renderHeader(); renderActiveTab(); }
+
+/* ===== Вкладка 1: Подія та вклад (ТЗ §4.2) ===== */
+function renderTab1() {
+  const d = draft();
+  const players = pa().players.filter(p => p.isActive);
+  const visible = players.filter(classFilterMatch);
+  const rosterHtml = players.length === 0
+    ? '<p class="muted">' + t('noPlayers') + '</p>'
+    : visible.length === 0
+    ? '<p class="muted">' + t('filterEmpty') + '</p>'
+    : visible.map(p => {
+        const pr = d.presence[p.id] || {};
+        const present = !!pr.present;
+        const dis = present ? '' : ' disabled';
+        const controls = d.mode === 'simple'
+          ? '<label class="inline"><input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
+            (pr.top ? ' checked' : '') + dis + '> ' + t('topFlag') + '</label>'
+          : '<span class="metrics">' + [['damage', 'Damage'], ['taken', 'Taken'], ['heal', 'Heal']]
+              .map(([k, t]) => '<label>' + t + '<input type="number" min="0" step="1" class="inpMetric" ' +
+                'data-pid="' + p.id + '" data-metric="' + k + '" value="' +
+                (pr[k] > 0 ? pr[k] : '') + '"' + dis + '></label>').join('') + '</span>';
+        return '<div class="roster-row' + (present ? '' : ' absent') + '">' +
+          '<label class="inline"><input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
+          (present ? ' checked' : '') + '> ' + t('present') + '</label>' +
+          '<span class="nick">' + escapeHtml(p.nickname) + '</span>' +
+          '<span class="muted small">' + escapeHtml(className(p.classId)) +
+            (p.level ? ' · ' + t('thLevel') + ' ' + p.level : '') + '</span>' +
+          controls + '</div>';
+      }).join('');
+  document.getElementById('tab1').innerHTML =
+    '<div class="card">' +
+      '<h2>' + t('eventH2') + '</h2>' +
+      '<div class="row">' +
+        '<input type="text" id="eventTypeInput" class="grow" list="eventTypeList" ' +
+          'placeholder="' + t('eventPh') + '" value="' +
+          escapeHtml(d.eventTypeName) + '" maxlength="60">' +
+        '<datalist id="eventTypeList">' + pa().eventTypes.map(ev =>
+          '<option value="' + escapeHtml(ev) + '">').join('') + '</datalist>' +
+      '</div>' +
+      '<div class="row" style="margin-top:8px">' +
+        '<span class="muted small">' + t('modeLabel') + '</span>' +
+        '<label class="inline"><input type="radio" name="mode" id="modeSimple" value="simple"' +
+          (d.mode === 'simple' ? ' checked' : '') + '> ' + t('modeSimple') + '</label>' +
+        '<label class="inline"><input type="radio" name="mode" id="modeAdvanced" value="advanced"' +
+          (d.mode === 'advanced' ? ' checked' : '') + '> ' + t('modeAdvanced') + '</label>' +
+      '</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="row"><h2 class="grow">' + t('presenceH2') + '</h2>' +
+        '<button class="btn btn-sm" id="btnAllPresent">' + t('allPresent') + '</button>' +
+        '<button class="btn btn-sm" id="btnNonePresent">' + t('nonePresent') + '</button></div>' +
+      classFilterBar() +
+      rosterHtml +
+    '</div>';
+
+  const tab = document.getElementById('tab1');
+  tab.querySelector('#eventTypeInput').addEventListener('change', e => {
+    draft().eventTypeName = e.target.value.trim(); save();
+  });
+  tab.querySelectorAll('input[name="mode"]').forEach(r =>
+    r.addEventListener('change', e => { draft().mode = e.target.value; save(); renderTab1(); }));
+  // масові кнопки діють лише на відфільтрованих (видимих) гравців
+  tab.querySelector('#btnAllPresent')?.addEventListener('click', () => {
+    for (const p of visible) presenceOf(p.id).present = true;
+    save(); renderTab1();
+  });
+  tab.querySelector('#btnNonePresent')?.addEventListener('click', () => {
+    for (const p of visible) presenceOf(p.id).present = false;
+    save(); renderTab1();
+  });
+  wireClassFilter(tab, renderTab1);
+  tab.querySelectorAll('.chkPresent').forEach(c =>
+    c.addEventListener('change', e => {
+      presenceOf(e.target.dataset.pid).present = e.target.checked;
+      save(); renderTab1();
+    }));
+  tab.querySelectorAll('.chkTop').forEach(c =>
+    c.addEventListener('change', e => {
+      presenceOf(e.target.dataset.pid).top = e.target.checked; save();
+    }));
+  tab.querySelectorAll('.inpMetric').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const v = Math.max(0, Number(e.target.value) || 0);
+      presenceOf(e.target.dataset.pid)[e.target.dataset.metric] = v;
+      e.target.value = v > 0 ? v : '';
+      save();
+    }));
+}
+function presenceOf(pid) {
+  const d = draft();
+  if (!d.presence[pid]) {
+    d.presence[pid] = { present: false, top: false, damage: 0, taken: 0, heal: 0 };
+  }
+  return d.presence[pid];
+}
+function className(classId) {
+  const c = db.classes.find(c => c.id === classId);
+  return c ? c.name : '—';
+}
+/* ===== Вкладка 2: Здобич і заявки (ТЗ §4.3) ===== */
+const CATEGORIES = ['Зброя', 'Броня', 'Біжутерія', 'Ресурси', 'Інше']; // канонічні значення в базі
+
+function rarityBadge(item) {
+  const label = lang() === 'en'
+    ? (item.rarityLabelEn || rarityLabel(item.rarity))
+    : (item.rarityLabelRu || rarityLabel(item.rarity));
+  return '<span class="badge ' + item.rarity + '">' + escapeHtml(label) + '</span>';
+}
+function itemIcon(item) {
+  return item && item.icon
+    ? '<img class="item-ico" src="' + escapeHtml(item.icon) + '" alt="" loading="lazy" ' +
+      'onerror="this.remove()">'
+    : '';
+}
+function itemDisplayName(item) {
+  if (!item) return '?';
+  return lang() === 'en' && item.nameEn ? item.nameEn : item.name;
+}
+function presentPlayers() {
+  const d = draft();
+  return pa().players.filter(p => p.isActive && d.presence[p.id] && d.presence[p.id].present);
+}
+function claimsOf(pid) {
+  const d = draft();
+  if (!Array.isArray(d.claims[pid])) d.claims[pid] = [];
+  return d.claims[pid];
+}
+function invalidateCalc() {  // будь-яка зміна вхідних даних скидає ручні рішення й роли
+  const d = draft();
+  d.overrides = {}; d.rollMemo = {};
+}
+
+// v1.6: плитковий пікер — картки предметів (cards/<uid>_<мова>.jpg) або чип-фолбек
+function quickPickHtml(filter) {
+  const f = (filter || '').trim().toLowerCase();
+  const pool = db.items.filter(i => !i.isArchived &&
+    (!f || i.name.toLowerCase().includes(f) ||
+     (i.nameEn && i.nameEn.toLowerCase().includes(f))));
+  if (db.items.filter(i => !i.isArchived).length === 0) return '';
+  const shown = pool.slice(0, 24);
+  const tiles = shown.map(i => {
+    const label = '<span class="tile-label">' +
+      (i.icon ? itemIcon(i) : '<span class="dot ' + i.rarity + '"></span>') +
+      escapeHtml(itemDisplayName(i)) + '</span>';
+    const img = i.catalogUid
+      ? '<img src="cards/' + i.catalogUid + '_' + lang() + '.jpg" alt="' +
+        escapeHtml(itemDisplayName(i)) + '" loading="lazy" ' +
+        'onerror="this.parentNode.classList.add(\'no-img\'); this.remove()">'
+      : '';
+    return '<button type="button" class="tile' + (img ? '' : ' no-img') + '" data-iid="' +
+      i.id + '" title="' + escapeHtml(itemDisplayName(i)) + '">' + img + label + '</button>';
+  }).join('');
+  return '<span class="muted small">' + t('quickPick') + '</span>' +
+    '<div class="tile-grid">' + tiles + '</div>' +
+    (pool.length > shown.length
+      ? '<div class="muted small" style="margin-top:4px">' +
+        t('moreItems', pool.length - shown.length) + '</div>' : '');
+}
+
+function renderTab2() {
+  const d = draft();
+  const itemsById = byId(db.items);
+  const dropRows = d.drops.length === 0
+    ? '<p class="muted">' + t('nothingAdded') + '</p>'
+    : d.drops.map(dr => {
+        const it = itemsById[dr.itemId];
+        return '<div class="roster-row"><span class="grow">' + itemIcon(it) +
+          escapeHtml(itemDisplayName(it)) +
+          ' ' + (it ? rarityBadge(it) : '') + '</span>' +
+          '<label class="inline small">' + t('pcsShort') + ' <input type="number" min="1" step="1" class="inpDropQty" ' +
+            'data-iid="' + dr.itemId + '" value="' + dr.quantity + '"></label>' +
+          '<button class="btn btn-sm btn-danger btnDropDel" data-iid="' + dr.itemId + '">✕</button></div>';
+      }).join('');
+
+  const dropItems = d.drops.map(dr => itemsById[dr.itemId]).filter(Boolean);
+  // ТЗ §4.3 (v1.3): заявки доступні всім активним; галочка сама позначає присутність
+  const allClaimants = pa().players.filter(p => p.isActive);
+  const claimants = allClaimants.filter(classFilterMatch);   // v1.7: фільтр за класом
+  let claimsHtml;
+  if (allClaimants.length === 0) {
+    claimsHtml = '<p class="muted">' + t('noPlayers') + '</p>';
+  } else if (dropItems.length === 0) {
+    claimsHtml = '<p class="muted">' + t('addLootFirst') + '</p>';
+  } else if (claimants.length === 0) {
+    claimsHtml = classFilterBar() + '<p class="muted">' + t('filterEmpty') + '</p>';
+  } else {
+    const chk = (pid, iid) => '<input type="checkbox" class="chkClaim" data-pid="' + pid +
+      '" data-iid="' + iid + '"' + (claimsOf(pid).includes(iid) ? ' checked' : '') + '>';
+    claimsHtml = classFilterBar() +
+      '<div class="claims-table table-wrap"><table><thead><tr><th>' + t('playerTh') + '</th>' +
+      dropItems.map(it => '<th>' + itemIcon(it) + escapeHtml(itemDisplayName(it)) + '</th>').join('') +
+      '</tr></thead><tbody>' +
+      claimants.map(p => '<tr><td><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
+        escapeHtml(className(p.classId)) + '</span></td>' +
+        dropItems.map(it => '<td>' + chk(p.id, it.id) + '</td>').join('') + '</tr>').join('') +
+      '</tbody></table></div>' +
+      '<div class="claims-cards">' +
+      claimants.map(p => '<div class="card"><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
+        escapeHtml(className(p.classId)) + '</span><div class="row" style="margin-top:6px">' +
+        dropItems.map(it => '<label class="inline small">' + chk(p.id, it.id) + ' ' +
+          itemIcon(it) + escapeHtml(itemDisplayName(it)) + '</label>').join('') + '</div></div>').join('') +
+      '</div>' +
+      '<p class="muted small" style="margin-top:6px">' + t('claimAutoPresent') + '</p>';
+  }
+
+  document.getElementById('tab2').innerHTML =
+    '<div class="card">' +
+      '<h2>' + t('dropsH2') + '</h2>' +
+      '<div class="row">' +
+        '<input type="text" id="itemSearch" class="grow" list="itemSearchList" placeholder="' +
+          t('itemPh') + '">' +
+        '<datalist id="itemSearchList">' + db.items.filter(i => !i.isArchived).map(i =>
+          '<option value="' + escapeHtml(i.name) + '">').join('') + '</datalist>' +
+        '<label class="inline small">' + t('pcsShort') +
+          ' <input type="number" id="inpQty" min="1" step="1" value="1"></label>' +
+        '<button class="btn btn-primary" id="btnAddDrop">' + t('add') + '</button>' +
+      '</div>' +
+      '<div id="quickPick" style="margin-top:8px">' + quickPickHtml('') + '</div>' +
+      '<div id="quickItemForm" hidden style="margin-top:10px; border-top:1px dashed var(--line); padding-top:10px">' +
+        '<p class="small muted">' + t('quickHint') + '</p>' +
+        '<div class="row">' +
+          '<input type="text" id="qiName" class="grow" placeholder="' + t('qiNamePh') + '">' +
+          '<select id="qiCategory">' + CATEGORIES.map(c =>
+            '<option value="' + c + '">' + catLabel(c) + '</option>').join('') + '</select>' +
+          '<select id="qiRarity">' + Object.keys(RARITY_LABELS).map(v =>
+            '<option value="' + v + '">' + rarityLabel(v) + '</option>').join('') + '</select>' +
+        '</div>' +
+        '<div class="row" style="margin-top:6px">' +
+          '<span class="small muted">' + t('fitsLabel') + '</span>' +
+          db.classes.filter(c => !c.isArchived).map(c =>
+            '<label class="inline small"><input type="checkbox" class="qiClass" value="' + c.id + '"> ' +
+            escapeHtml(c.name) + '</label>').join('') +
+          '<button class="btn btn-primary btn-sm" id="btnQuickCreate">' + t('createAdd') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="margin-top:10px">' + dropRows + '</div>' +
+    '</div>' +
+    '<div class="card"><h2>' + t('claimsH2') + '</h2>' + claimsHtml + '</div>';
+
+  const tab = document.getElementById('tab2');
+  tab.querySelector('#quickPick').addEventListener('click', e => {
+    const pick = e.target.closest('button[data-iid]');
+    if (!pick) return;
+    addDrop(pick.dataset.iid, Number(tab.querySelector('#inpQty').value) || 1);
+  });
+  tab.querySelector('#itemSearch').addEventListener('input', e => {
+    tab.querySelector('#quickPick').innerHTML = quickPickHtml(e.target.value);
+  });
+  tab.querySelector('#btnAddDrop').addEventListener('click', () => {
+    const name = tab.querySelector('#itemSearch').value.trim();
+    if (!name) { banner(t('enterItemName')); return; }
+    const item = db.items.find(i => !i.isArchived &&
+      (i.name.toLowerCase() === name.toLowerCase() ||
+       (i.nameEn && i.nameEn.toLowerCase() === name.toLowerCase())));
+    if (!item) {
+      const f = tab.querySelector('#quickItemForm');
+      f.hidden = false;
+      f.querySelector('#qiName').value = name;
+      return;
+    }
+    addDrop(item.id, Number(tab.querySelector('#inpQty').value) || 1);
+  });
+  tab.querySelector('#btnQuickCreate').addEventListener('click', () => {
+    const name = tab.querySelector('#qiName').value.trim();
+    if (!name) { banner(t('enterItemName')); return; }
+    if (db.items.some(i => i.name.toLowerCase() === name.toLowerCase())) {
+      banner(t('itemExists')); return;
+    }
+    const item = {
+      id: LMCore.uuid(), name,
+      category: tab.querySelector('#qiCategory').value,
+      rarity: tab.querySelector('#qiRarity').value,
+      targetClasses: [...tab.querySelectorAll('.qiClass:checked')].map(c => c.value),
+      isArchived: false
+    };
+    db.items.push(item);
+    addDrop(item.id, Number(tab.querySelector('#inpQty').value) || 1);
+  });
+  tab.querySelectorAll('.inpDropQty').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const v = Math.max(1, Math.round(Number(e.target.value) || 1));
+      const dr = draft().drops.find(x => x.itemId === e.target.dataset.iid);
+      if (dr) { dr.quantity = v; invalidateCalc(); save(); }
+      e.target.value = v;
+    }));
+  tab.querySelectorAll('.btnDropDel').forEach(b =>
+    b.addEventListener('click', e => {
+      const iid = e.target.dataset.iid;
+      const d2 = draft();
+      d2.drops = d2.drops.filter(x => x.itemId !== iid);
+      for (const pid of Object.keys(d2.claims)) {
+        d2.claims[pid] = d2.claims[pid].filter(x => x !== iid);
+      }
+      invalidateCalc(); save(); renderTab2();
+    }));
+  wireClassFilter(tab, renderTab2);
+  tab.querySelectorAll('.chkClaim').forEach(c =>
+    c.addEventListener('change', e => {
+      const { pid, iid } = e.target.dataset;
+      const list = claimsOf(pid);
+      if (e.target.checked) {
+        if (!list.includes(iid)) list.push(iid);
+        presenceOf(pid).present = true;   // заявка ⇒ присутність (ТЗ §4.3, v1.3)
+      }
+      else { const idx = list.indexOf(iid); if (idx >= 0) list.splice(idx, 1); }
+      invalidateCalc(); save();
+    }));
+}
+function addDrop(itemId, qty) {
+  const d = draft();
+  qty = Math.max(1, Math.round(qty));
+  const existing = d.drops.find(x => x.itemId === itemId);
+  if (existing) existing.quantity += qty;
+  else d.drops.push({ itemId, quantity: qty });
+  invalidateCalc(); save(); renderTab2();
+}
+/* ===== Вкладка 3: Розподіл (ТЗ §4.4, §5) ===== */
+// Етап 2 (ТЗ §2.2): DiscordWebhookService робитиме POST на settings.webhookUrl {content: text}
+const notificationService = {
+  async send(reportText) { /* NoopNotificationService — Етап 1 */ }
+};
+
+function runCalc() {
+  const d = draft();
+  return LMCore.distribute({
+    session: d,
+    playersById: byId(pa().players),
+    classesById: byId(db.classes),
+    itemsById: byId(db.items),
+    history: pa().history,
+    settings: db.settings,
+    nowISO: nowISO(),
+    rng: Math.random,
+    overrides: d.overrides,
+    rollMemo: d.rollMemo
+  });
+}
+
+function renderTab3() {
+  const d = draft();
+  const itemsById = byId(db.items);
+  const playersById = byId(pa().players);
+  const present = presentPlayers();
+  const canCalc = present.length > 0 && d.drops.length > 0;
+
+  let resultHtml = '';
+  if (ui.calcResult) {
+    const { positions, scores } = ui.calcResult;
+    const topSet = LMCore.topContributors(d, scores);
+    const fmt = n => (Math.round(n * 10) / 10).toString();
+    const rows = positions.map(pos => {
+      const item = itemsById[pos.itemId];
+      const winner = pos.winnerId ? playersById[pos.winnerId] : null;
+      const badges =
+        (pos.classBonus ? ' <span class="badge info">' + t('classBonusBadge') + '</span>' : '') +
+        (pos.rolled ? ' <span class="badge plain">' + t('rollBadge') + '</span>' : '') +
+        (pos.manual ? ' <span class="badge plain">' + t('manualBadge') + '</span>' : '');
+      const candOpts = pos.candidates.map(c =>
+        '<option value="' + c.playerId + '"' + (c.playerId === pos.winnerId ? ' selected' : '') + '>' +
+        escapeHtml(playersById[c.playerId] ? playersById[c.playerId].nickname : '?') +
+        ' (' + fmt(c.priority) + ')</option>').join('');
+      const otherOpts = present
+        .filter(p => !pos.candidates.some(c => c.playerId === p.id))
+        .map(p => '<option value="' + p.id + '"' + (p.id === pos.winnerId ? ' selected' : '') + '>' +
+          escapeHtml(p.nickname) + '</option>').join('');
+      return '<div class="pos-row"><div class="pos-head">' +
+        itemIcon(item) + '<b>' + escapeHtml(itemDisplayName(item)) + '</b> ' +
+        (item ? rarityBadge(item) : '') +
+        ' <span class="muted small">' + t('copyN', pos.copyIndex + 1) + '</span>' +
+        (winner
+          ? ' → <b>' + escapeHtml(winner.nickname) + '</b>' +
+            (pos.priority !== null ? ' <span class="muted small">(' + fmt(pos.priority) + ')</span>' : '')
+          : ' → <span class="muted">' + t('freeLeft') + '</span>') +
+        badges + '</div>' +
+        '<div class="row small" style="margin-top:4px"><span class="muted">' + t('winnerLabel') + '</span>' +
+        '<select class="winnerSelect" data-key="' + pos.key + '">' +
+          '<option value=""' + (pos.manual ? '' : ' selected') + '>' + t('autoOpt') + '</option>' +
+          (candOpts ? '<optgroup label="' + t('claimantsGrp') + '">' + candOpts + '</optgroup>' : '') +
+          (otherOpts ? '<optgroup label="' + t('otherGrp') + '">' + otherOpts + '</optgroup>' : '') +
+        '</select></div></div>';
+    }).join('');
+    const reportText = LMCore.formatReport({
+      allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || t('defaultEvent'),
+      positions, itemsById, playersById, classesById: byId(db.classes), topSet, lang: lang() });
+    resultHtml =
+      '<div class="card"><h2>' + t('resultH2') + '</h2>' + rows + '</div>' +
+      '<div class="card"><h2>' + t('chatTextH2') + '</h2>' +
+        '<textarea id="reportText" rows="10" readonly>' + escapeHtml(reportText) + '</textarea>' +
+        '<div class="row" style="margin-top:8px">' +
+          '<button class="btn" id="btnCopy">' + t('copyBtn') + '</button>' +
+          '<button class="btn btn-primary" id="btnConfirm">' + t('confirmBtn') + '</button>' +
+        '</div></div>';
+  }
+
+  document.getElementById('tab3').innerHTML =
+    '<div class="card"><div class="row">' +
+      '<button class="btn btn-primary" id="btnCalc"' + (canCalc ? '' : ' disabled') +
+        '>' + t('calc') + '</button>' +
+      (canCalc ? '' : '<span class="muted small">' + t('calcHint') + '</span>') +
+    '</div></div>' + resultHtml;
+
+  const tab = document.getElementById('tab3');
+  tab.querySelector('#btnCalc').addEventListener('click', () => {
+    const res = runCalc();
+    for (const p of res.positions) {
+      if (p.rolled && p.winnerId && !p.manual) draft().rollMemo[p.key] = p.winnerId;
+    }
+    ui.calcResult = res;
+    save(); renderTab3();
+  });
+  tab.querySelectorAll('.winnerSelect').forEach(sel =>
+    sel.addEventListener('change', e => {
+      const key = e.target.dataset.key;
+      if (e.target.value) draft().overrides[key] = e.target.value;
+      else delete draft().overrides[key];
+      const res = runCalc();   // перерахунок позицій нижче з урахуванням override
+      for (const p of res.positions) {
+        if (p.rolled && p.winnerId && !p.manual) draft().rollMemo[p.key] = p.winnerId;
+      }
+      ui.calcResult = res;
+      save(); renderTab3();
+    }));
+  tab.querySelector('#btnCopy')?.addEventListener('click', async () => {
+    const ta = tab.querySelector('#reportText');
+    try { await navigator.clipboard.writeText(ta.value); banner(t('copied')); }
+    catch (err) {
+      ta.focus(); ta.select();
+      banner(document.execCommand('copy') ? t('copied') : t('copyFail'));
+    }
+  });
+  tab.querySelector('#btnConfirm')?.addEventListener('click', async () => {
+    if (!ui.calcResult) return;
+    if (!confirm(t('confirmSave'))) return;
+    const d2 = draft();
+    const records = LMCore.buildRecords({
+      positions: ui.calcResult.positions, itemsById: byId(db.items),
+      playersById: byId(pa().players), scores: ui.calcResult.scores,
+      nowISO: nowISO(), eventTypeName: d2.eventTypeName || t('defaultEvent') });
+    pa().history.push(...records);
+    const evName = (d2.eventTypeName || '').trim();
+    if (evName && !pa().eventTypes.includes(evName)) pa().eventTypes.push(evName);
+    const text = tab.querySelector('#reportText').value;
+    pa().draftSession = null;
+    ui.calcResult = null;
+    save();
+    try { await notificationService.send(text); } catch (err) { /* Етап 2 */ }
+    banner(t('savedToHistory', records.length));
+    renderTab3();
+  });
+}
+/* ===== Вкладка 4: Бази та налаштування (ТЗ §4.5) ===== */
+const ROLES = ['Офіцер', 'Ветеран', 'Учасник'];
+ui.tab4open = ui.tab4open || new Set(['alliances']);
+ui.histFilter = ui.histFilter || { playerId: '', from: '', to: '' };
+
+function mutated() { ui.calcResult = null; save(); }
+function anyHistoryHasItem(itemId) {
+  return Object.values(db.perAlliance).some(x => x.history.some(r => r.itemId === itemId));
+}
+function anyPlayerHasClass(classId) {
+  return Object.values(db.perAlliance).some(x => x.players.some(p => p.classId === classId));
+}
+function sect(id, title, bodyHtml) {
+  return '<details class="sect" data-sect="' + id + '"' +
+    (ui.tab4open.has(id) ? ' open' : '') + '><summary>' + title + '</summary>' +
+    '<div class="sect-body">' + bodyHtml + '</div></details>';
+}
+
+function renderTab4() {
+  const paData = pa();
+  const clsOptions = sel => db.classes.filter(c => !c.isArchived || c.id === sel)
+    .map(c => '<option value="' + c.id + '"' + (c.id === sel ? ' selected' : '') + '>' +
+      escapeHtml(c.name) + '</option>').join('');
+
+  /* — Альянси — */
+  const alliancesHtml =
+    db.alliances.map(a => '<div class="roster-row">' +
+      '<input type="text" class="inpAllianceName grow" data-aid="' + a.id + '" value="' +
+        escapeHtml(a.name) + '" maxlength="40">' +
+      '<button class="btn btn-sm btn-danger btnDelAlliance" data-aid="' + a.id + '">' +
+        t('del') + '</button>' +
+      '</div>').join('') +
+    '<div class="row" style="margin-top:8px">' +
+      '<input type="text" id="inpNewAlliance" class="grow" placeholder="' + t('newAlliancePh') +
+        '" maxlength="40">' +
+      '<button class="btn btn-primary btn-sm" id="btnAddAlliance">' + t('addAlliance') + '</button></div>';
+
+  /* — Гравці — */
+  const roleOpts = sel => ROLES.map(r => '<option value="' + r + '"' +
+    (r === sel ? ' selected' : '') + '>' + roleLabel(r) + '</option>').join('');
+  const playersHtml = classFilterBar() +
+    '<div class="table-wrap"><table><thead><tr><th>' + t('thNick') + '</th><th>' + t('thClass') +
+      '</th><th>' + t('thLevel') + '</th><th>' + t('thStatus') + '</th><th>' + t('thActive') +
+      '</th><th></th></tr></thead><tbody>' +
+    paData.players.filter(classFilterMatch).map(p =>
+      '<tr' + (p.isActive ? '' : ' class="cancelled"') + '>' +
+      '<td><input type="text" class="inpNick" data-pid="' + p.id + '" value="' +
+        escapeHtml(p.nickname) + '" maxlength="30" style="width:130px"></td>' +
+      '<td><select class="selClass" data-pid="' + p.id + '">' + clsOptions(p.classId) + '</select></td>' +
+      '<td><input type="number" class="inpLevel" data-pid="' + p.id + '" min="1" step="1" value="' +
+        (p.level || '') + '" style="width:64px"></td>' +
+      '<td><select class="selRole" data-pid="' + p.id + '">' + roleOpts(p.role) + '</select></td>' +
+      '<td><input type="checkbox" class="chkActive" data-pid="' + p.id + '"' +
+        (p.isActive ? ' checked' : '') + '></td>' +
+      '<td><button class="btn btn-sm btn-danger btnDelPlayer" data-pid="' + p.id + '">✕</button></td>' +
+      '</tr>').join('') +
+    '</tbody></table></div>' +
+    '<div class="row" style="margin-top:8px">' +
+      '<input type="text" id="inpNewNick" placeholder="' + t('nickPh') + '" maxlength="30" class="grow">' +
+      '<select id="selNewClass">' + clsOptions(null) + '</select>' +
+      '<select id="selNewRole">' + roleOpts('Учасник') + '</select>' +
+      '<button class="btn btn-primary btn-sm" id="btnAddPlayer">' + t('addPlayer') + '</button></div>' +
+    '<details style="margin-top:10px"><summary class="small muted">' + t('importRosterBtn') +
+      '</summary>' +
+      '<textarea id="rosterText" rows="8" placeholder="' + escapeHtml(t('rosterPh')) +
+        '" style="margin-top:8px"></textarea>' +
+      '<div class="row" style="margin-top:6px">' +
+        '<button class="btn btn-primary btn-sm" id="btnImportRoster">' + t('importRosterBtn') +
+        '</button></div></details>';
+
+  /* — Предмети — */
+  const itemFilter = (ui.itemFilter || '').toLowerCase();
+  const itemsShown = db.items.filter(i => !itemFilter || i.name.toLowerCase().includes(itemFilter));
+  const itemsHtml =
+    '<div class="row"><input type="search" id="inpItemFilter" class="grow" placeholder="' +
+      t('searchCatalogPh') + '" value="' + escapeHtml(ui.itemFilter || '') + '">' +
+      '<button class="btn btn-sm" id="btnSyncCatalog">' + t('syncCatalogBtn') + '</button>' +
+      '<input type="file" id="catalogFile" accept=".json,application/json" hidden></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>' + t('thName') + '</th><th>' + t('thCategory') +
+      '</th><th>' + t('thRarity') + '</th><th>' + t('thClasses') + '</th><th></th></tr></thead><tbody>' +
+    itemsShown.map(i => '<tr' + (i.isArchived ? ' class="cancelled"' : '') + '>' +
+      '<td>' + itemIcon(i) + '<input type="text" class="inpItemName" data-iid="' + i.id + '" value="' +
+        escapeHtml(i.name) + '" maxlength="60" style="width:150px"></td>' +
+      '<td><select class="selItemCat" data-iid="' + i.id + '">' + CATEGORIES.map(c =>
+        '<option value="' + c + '"' + (c === i.category ? ' selected' : '') + '>' +
+        catLabel(c) + '</option>').join('') + '</select></td>' +
+      '<td><select class="selItemRarity" data-iid="' + i.id + '">' +
+        Object.keys(RARITY_LABELS).map(v => '<option value="' + v + '"' +
+          (v === i.rarity ? ' selected' : '') + '>' + rarityLabel(v) + '</option>').join('') +
+        '</select></td>' +
+      '<td><details><summary class="small">' +
+        (i.targetClasses.length === 0 ? t('forAll')
+          : i.targetClasses.map(className).map(escapeHtml).join(', ')) +
+        '</summary>' + db.classes.filter(c => !c.isArchived).map(c =>
+          '<label class="inline small"><input type="checkbox" class="chkItemClass" data-iid="' + i.id +
+          '" value="' + c.id + '"' + (i.targetClasses.includes(c.id) ? ' checked' : '') + '> ' +
+          escapeHtml(c.name) + '</label> ').join('') + '</details></td>' +
+      '<td class="row">' +
+        '<button class="btn btn-sm btnArchItem" data-iid="' + i.id + '">' +
+          (i.isArchived ? t('unarchive') : t('archive')) + '</button>' +
+        '<button class="btn btn-sm btn-danger btnDelItem" data-iid="' + i.id + '">✕</button></td>' +
+      '</tr>').join('') +
+    '</tbody></table></div>' +
+    '<p class="muted small">' + t('newItemHint') + '</p>';
+
+  /* — Класи — */
+  const classesHtml =
+    '<div class="table-wrap"><table><thead><tr><th>' + t('thName') +
+      '</th><th>w<sub>dmg</sub></th><th>w<sub>taken</sub></th><th>w<sub>heal</sub></th><th></th></tr></thead><tbody>' +
+    db.classes.map(c => '<tr' + (c.isArchived ? ' class="cancelled"' : '') + '>' +
+      '<td><input type="text" class="inpClsName" data-cid="' + c.id + '" value="' +
+        escapeHtml(c.name) + '" maxlength="30" style="width:130px"></td>' +
+      ['wDmg', 'wTaken', 'wHeal'].map(k =>
+        '<td><input type="number" class="inpClsW" data-cid="' + c.id + '" data-w="' + k +
+        '" min="0" max="1" step="0.05" value="' + c[k] + '" style="width:70px"></td>').join('') +
+      '<td class="row"><button class="btn btn-sm btnArchCls" data-cid="' + c.id + '">' +
+        (c.isArchived ? t('unarchive') : t('archive')) + '</button>' +
+      '<button class="btn btn-sm btn-danger btnDelCls" data-cid="' + c.id + '">✕</button></td></tr>').join('') +
+    '</tbody></table></div>' +
+    '<div class="row" style="margin-top:8px">' +
+      '<input type="text" id="inpNewClsName" placeholder="' + t('classNamePh') + '" maxlength="30" class="grow">' +
+      '<button class="btn btn-primary btn-sm" id="btnAddCls">' + t('addClass') + '</button></div>';
+
+  /* — Типи івентів — */
+  const eventsHtml = paData.eventTypes.length === 0
+    ? '<p class="muted">' + t('eventsEmpty') + '</p>'
+    : paData.eventTypes.map((ev, idx) => '<div class="roster-row"><span class="grow">' +
+        escapeHtml(ev) + '</span><button class="btn btn-sm btn-danger btnDelEvent" data-idx="' +
+        idx + '">✕</button></div>').join('');
+
+  /* — Історія — */
+  const f = ui.histFilter;
+  const histShown = paData.history.filter(r => {
+    if (f.playerId && r.playerId !== f.playerId) return false;
+    if (f.from && r.timestamp < f.from) return false;
+    if (f.to && r.timestamp > f.to + 'T23:59:59.999Z') return false;
+    return true;
+  }).slice().reverse();
+  const historyHtml =
+    '<div class="row">' +
+      '<select id="histPlayerFilter"><option value="">' + t('allPlayersOpt') + '</option>' +
+        paData.players.map(p => '<option value="' + p.id + '"' +
+          (p.id === f.playerId ? ' selected' : '') + '>' + escapeHtml(p.nickname) + '</option>').join('') +
+      '</select>' +
+      '<label class="inline small">' + t('histFrom') + ' <input type="date" id="histFrom" value="' +
+        f.from + '"></label>' +
+      '<label class="inline small">' + t('histTo') + ' <input type="date" id="histTo" value="' +
+        f.to + '"></label>' +
+    '</div>' +
+    (histShown.length === 0 ? '<p class="muted" style="margin-top:8px">' + t('noRecords') + '</p>' :
+      histShown.map(r => '<div class="pos-row' + (r.cancelled ? ' cancelled' : '') + '">' +
+        '<div class="pos-head"><span class="muted small">' + r.timestamp.slice(0, 10) + '</span> ' +
+        '<span class="badge plain">' + escapeHtml(r.eventTypeName) + '</span> ' +
+        '<b>' + escapeHtml(r.itemNameSnapshot) + '</b> ×' + r.quantity +
+        ' → <b>' + escapeHtml(r.playerNicknameSnapshot) + '</b>' +
+        ' <span class="muted small">' + t('histScore', Math.round(r.scoreAtDistribution * 10) / 10) + '</span>' +
+        (r.rolled ? ' <span class="badge plain">🎲</span>' : '') +
+        (r.manual ? ' <span class="badge plain">' + t('manualBadge') + '</span>' : '') +
+        (r.cancelled ? '' : ' <button class="btn btn-sm btn-danger btnCancelRec" data-rid="' +
+          r.id + '">' + t('cancelRec') + '</button>') +
+        '</div></div>').join(''));
+
+  /* — Налаштування — */
+  const st = db.settings;
+  const numField = (key, label, val) =>
+    '<label class="inline small">' + label +
+    ' <input type="number" class="inpSetting" data-key="' + key + '" value="' + val + '" step="any"></label>';
+  const settingsHtml =
+    '<div class="row">' +
+      '<label class="inline small">' + t('langLabel') +
+        ' <select id="selLanguage">' + Object.keys(LANG_NAMES).map(code =>
+          '<option value="' + code + '"' + (code === lang() ? ' selected' : '') + '>' +
+          LANG_NAMES[code] + '</option>').join('') + '</select></label>' +
+    '</div><div class="row" style="margin-top:6px">' +
+      numField('scoreTop', t('setScoreTop'), st.scoreTop) +
+      numField('scorePresent', t('setScorePresent'), st.scorePresent) +
+      numField('pClass', t('setPClass'), st.pClass) +
+    '</div><div class="row" style="margin-top:6px">' +
+      numField('kPenalty', t('setKPenalty'), st.kPenalty) +
+      numField('historyDays', t('setHistoryDays'), st.historyDays) +
+      numField('wWon', t('setWWon'), st.wWon) +
+    '</div><p class="small muted" style="margin-bottom:4px">' + t('rarityWeightsLabel') + '</p><div class="row">' +
+      Object.keys(RARITY_LABELS).map(v =>
+        numField('rarityWeights.' + v, rarityLabel(v), st.rarityWeights[v])).join('') +
+    '</div><div class="row" style="margin-top:8px">' +
+      '<button class="btn btn-sm" id="btnResetSettings">' + t('resetDefaults') + '</button></div>';
+
+  /* — Резервна копія — */
+  const backupHtml =
+    '<div class="row">' +
+      '<button class="btn" id="btnExport">' + t('exportBtn') + '</button>' +
+      '<label class="btn">' + t('importBtn') +
+        '<input type="file" id="importFile" accept=".json,application/json" hidden></label>' +
+    '</div><p class="muted small">' + t('importHint') + '</p>';
+
+  document.getElementById('tab4').innerHTML =
+    sect('alliances', t('sectAlliances', db.alliances.length), alliancesHtml) +
+    sect('players', t('sectPlayers', paData.players.length), playersHtml) +
+    sect('items', t('sectItems', db.items.length), itemsHtml) +
+    sect('classes', t('sectClasses', db.classes.length), classesHtml) +
+    sect('events', t('sectEvents', paData.eventTypes.length), eventsHtml) +
+    sect('history', t('sectHistory', paData.history.length), historyHtml) +
+    sect('settings', t('sectSettings'), settingsHtml) +
+    sect('backup', t('sectBackup'), backupHtml);
+
+  wireTab4();
+}
+
+function wireTab4() {
+  const tab = document.getElementById('tab4');
+  tab.querySelectorAll('details.sect').forEach(dEl =>
+    dEl.addEventListener('toggle', () => {
+      if (dEl.open) ui.tab4open.add(dEl.dataset.sect);
+      else ui.tab4open.delete(dEl.dataset.sect);
+    }));
+  wireClassFilter(tab, renderTab4);
+
+  /* Альянси */
+  tab.querySelector('#btnAddAlliance').addEventListener('click', () => {
+    const name = tab.querySelector('#inpNewAlliance').value.trim();
+    if (!name) { banner(t('enterAllianceName')); return; }
+    if (db.alliances.some(a => a.name.toLowerCase() === name.toLowerCase())) {
+      banner(t('allianceExists')); return;
+    }
+    const a = { id: LMCore.uuid(), name, createdAt: nowISO() };
+    db.alliances.push(a);
+    db.perAlliance[a.id] = { players: [], history: [], eventTypes: [], draftSession: null };
+    mutated(); renderAll(); renderTab4();
+  });
+  tab.querySelectorAll('.inpAllianceName').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const a = db.alliances.find(x => x.id === e.target.dataset.aid);
+      const name = e.target.value.trim();
+      if (!name) { e.target.value = a.name; return; }
+      a.name = name; mutated(); renderHeader();
+    }));
+  tab.querySelectorAll('.btnDelAlliance').forEach(b =>
+    b.addEventListener('click', e => {
+      if (db.alliances.length <= 1) { banner(t('lastAlliance')); return; }
+      const a = db.alliances.find(x => x.id === e.target.dataset.aid);
+      if (!confirm(t('delAllianceConfirm', a.name))) return;
+      db.alliances = db.alliances.filter(x => x.id !== a.id);
+      delete db.perAlliance[a.id];
+      if (db.activeAllianceId === a.id) db.activeAllianceId = db.alliances[0].id;
+      mutated(); renderAll(); renderTab4();
+    }));
+
+  /* Гравці */
+  tab.querySelector('#btnAddPlayer').addEventListener('click', () => {
+    const nick = tab.querySelector('#inpNewNick').value.trim();
+    if (!nick) { banner(t('enterNick')); return; }
+    if (pa().players.some(p => p.nickname.toLowerCase() === nick.toLowerCase())) {
+      banner(t('nickExists')); return;
+    }
+    pa().players.push({ id: LMCore.uuid(), nickname: nick,
+      classId: tab.querySelector('#selNewClass').value,
+      role: tab.querySelector('#selNewRole').value, isActive: true, createdAt: nowISO() });
+    mutated(); renderTab4();
+  });
+  tab.querySelectorAll('.inpNick').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      const nick = e.target.value.trim();
+      if (!nick) { e.target.value = p.nickname; return; }
+      if (pa().players.some(x => x.id !== p.id &&
+          x.nickname.toLowerCase() === nick.toLowerCase())) {
+        banner(t('nickTaken')); e.target.value = p.nickname; return;
+      }
+      p.nickname = nick; mutated();
+    }));
+  tab.querySelectorAll('.selClass').forEach(sel =>
+    sel.addEventListener('change', e => {
+      pa().players.find(x => x.id === e.target.dataset.pid).classId = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.selRole').forEach(sel =>
+    sel.addEventListener('change', e => {
+      pa().players.find(x => x.id === e.target.dataset.pid).role = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.inpLevel').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      const raw = Number(e.target.value);
+      p.level = raw >= 1 ? Math.round(raw) : null;
+      e.target.value = p.level || '';
+      mutated();
+    }));
+  tab.querySelector('#btnImportRoster').addEventListener('click', () => {
+    const parsed = LMCore.parseRoster(tab.querySelector('#rosterText').value);
+    if (!parsed.ok) { banner(t('rosterFail', parsed.error)); return; }
+    const res = LMCore.applyRoster(pa().players, db.classes, parsed.groups, nowISO());
+    mutated(); renderTab4();
+    banner(t('rosterDone', res.addedPlayers, res.updatedPlayers, res.addedClasses));
+  });
+  tab.querySelectorAll('.chkActive').forEach(c =>
+    c.addEventListener('change', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      p.isActive = e.target.checked;
+      const d = pa().draftSession;
+      if (!p.isActive && d) {   // гігієна чернетки: вибулий втрачає присутність і заявки
+        delete d.presence[p.id];
+        delete d.claims[p.id];
+      }
+      mutated(); renderTab4();
+    }));
+  tab.querySelectorAll('.btnDelPlayer').forEach(b =>
+    b.addEventListener('click', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      if (pa().history.some(r => r.playerId === p.id)) {
+        banner(t('playerHasHistory'));
+        return;
+      }
+      if (!confirm(t('delPlayerConfirm', p.nickname))) return;
+      pa().players = pa().players.filter(x => x.id !== p.id);
+      const d = pa().draftSession;
+      if (d) { delete d.presence[p.id]; delete d.claims[p.id]; }
+      mutated(); renderTab4();
+    }));
+
+  /* Предмети */
+  const applyCatalog = parsed => {
+    const v = LMCore.validateCatalog(parsed);
+    if (!v.ok) { banner(t('importRejected', v.error)); return; }
+    const res = LMCore.syncCatalog(db.items, parsed);
+    mutated(); renderTab4();
+    banner(t('syncDone', res.added, res.updated));
+  };
+  tab.querySelector('#btnSyncCatalog').addEventListener('click', async () => {
+    try {
+      const r = await fetch('data/loot.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      applyCatalog(await r.json());
+    } catch (err) {   // file:// або нема сервера — просимо файл вручну
+      banner(t('syncPickHint'));
+      tab.querySelector('#catalogFile').click();
+    }
+  });
+  tab.querySelector('#catalogFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { applyCatalog(JSON.parse(reader.result)); }
+      catch (err) { banner(t('notJson', err.message)); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+  tab.querySelector('#inpItemFilter').addEventListener('input', e => {
+    ui.itemFilter = e.target.value; renderTab4();
+    const inp = document.getElementById('inpItemFilter');
+    inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+  });
+  tab.querySelectorAll('.inpItemName').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      const name = e.target.value.trim();
+      if (!name) { e.target.value = it.name; return; }
+      if (db.items.some(x => x.id !== it.id && x.name.toLowerCase() === name.toLowerCase())) {
+        banner(t('itemExists')); e.target.value = it.name; return;
+      }
+      it.name = name; mutated();
+    }));
+  tab.querySelectorAll('.selItemCat').forEach(sel =>
+    sel.addEventListener('change', e => {
+      db.items.find(x => x.id === e.target.dataset.iid).category = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.selItemRarity').forEach(sel =>
+    sel.addEventListener('change', e => {
+      db.items.find(x => x.id === e.target.dataset.iid).rarity = e.target.value; mutated();
+    }));
+  tab.querySelectorAll('.chkItemClass').forEach(c =>
+    c.addEventListener('change', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      const cid = e.target.value;
+      if (e.target.checked) { if (!it.targetClasses.includes(cid)) it.targetClasses.push(cid); }
+      else it.targetClasses = it.targetClasses.filter(x => x !== cid);
+      mutated();
+    }));
+  tab.querySelectorAll('.btnArchItem').forEach(b =>
+    b.addEventListener('click', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      it.isArchived = !it.isArchived; mutated(); renderTab4();
+    }));
+  tab.querySelectorAll('.btnDelItem').forEach(b =>
+    b.addEventListener('click', e => {
+      const it = db.items.find(x => x.id === e.target.dataset.iid);
+      if (anyHistoryHasItem(it.id)) {
+        banner(t('itemInHistory')); return;
+      }
+      if (!confirm(t('delItemConfirm', it.name))) return;
+      db.items = db.items.filter(x => x.id !== it.id);
+      for (const x of Object.values(db.perAlliance)) {
+        const d = x.draftSession;
+        if (d) {
+          d.drops = d.drops.filter(dr => dr.itemId !== it.id);
+          for (const pid of Object.keys(d.claims)) {
+            d.claims[pid] = d.claims[pid].filter(i => i !== it.id);
+          }
+        }
+      }
+      mutated(); renderTab4();
+    }));
+
+  /* Класи */
+  tab.querySelector('#btnAddCls').addEventListener('click', () => {
+    const name = tab.querySelector('#inpNewClsName').value.trim();
+    if (!name) { banner(t('enterClassName')); return; }
+    if (db.classes.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      banner(t('classExists')); return;
+    }
+    db.classes.push({ id: LMCore.uuid(), name, wDmg: 0.8, wTaken: 0.1, wHeal: 0.1,
+      isArchived: false });
+    mutated(); renderTab4();
+  });
+  tab.querySelectorAll('.inpClsName').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      const name = e.target.value.trim();
+      if (!name) { e.target.value = c.name; return; }
+      c.name = name; mutated();
+    }));
+  tab.querySelectorAll('.inpClsW').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      const v = Math.min(1, Math.max(0, Number(e.target.value) || 0));
+      c[e.target.dataset.w] = v; e.target.value = v; mutated();
+    }));
+  tab.querySelectorAll('.btnArchCls').forEach(b =>
+    b.addEventListener('click', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      c.isArchived = !c.isArchived; mutated(); renderTab4();
+    }));
+  tab.querySelectorAll('.btnDelCls').forEach(b =>
+    b.addEventListener('click', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      if (anyPlayerHasClass(c.id)) {
+        banner(t('classHasPlayers')); return;
+      }
+      if (!confirm(t('delClassConfirm', c.name))) return;
+      db.classes = db.classes.filter(x => x.id !== c.id);
+      db.items.forEach(i => { i.targetClasses = i.targetClasses.filter(x => x !== c.id); });
+      mutated(); renderTab4();
+    }));
+
+  /* Типи івентів */
+  tab.querySelectorAll('.btnDelEvent').forEach(b =>
+    b.addEventListener('click', e => {
+      pa().eventTypes.splice(Number(e.target.dataset.idx), 1);
+      mutated(); renderTab4();
+    }));
+
+  /* Історія */
+  tab.querySelector('#histPlayerFilter').addEventListener('change', e => {
+    ui.histFilter.playerId = e.target.value; renderTab4();
+  });
+  tab.querySelector('#histFrom').addEventListener('change', e => {
+    ui.histFilter.from = e.target.value; renderTab4();
+  });
+  tab.querySelector('#histTo').addEventListener('change', e => {
+    ui.histFilter.to = e.target.value; renderTab4();
+  });
+  tab.querySelectorAll('.btnCancelRec').forEach(b =>
+    b.addEventListener('click', e => {
+      const r = pa().history.find(x => x.id === e.target.dataset.rid);
+      if (!confirm(t('cancelRecConfirm', r.itemNameSnapshot, r.playerNicknameSnapshot))) return;
+      r.cancelled = true; mutated(); renderTab4();
+    }));
+
+  /* Налаштування */
+  tab.querySelectorAll('.inpSetting').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const key = e.target.dataset.key;
+      const v = Math.max(0, Number(e.target.value) || 0);
+      if (key.startsWith('rarityWeights.')) {
+        db.settings.rarityWeights[key.split('.')[1]] = v;
+      } else if (key === 'historyDays') {
+        db.settings.historyDays = Math.round(v);
+      } else {
+        db.settings[key] = v;
+      }
+      e.target.value = key === 'historyDays' ? Math.round(v) : v;
+      mutated();
+    }));
+  tab.querySelector('#selLanguage').addEventListener('change', e => {
+    db.settings.language = e.target.value;
+    mutated(); renderAll();
+  });
+  tab.querySelector('#btnResetSettings').addEventListener('click', () => {
+    if (!confirm(t('resetConfirm'))) return;
+    const wh = db.settings.webhookUrl, lg = db.settings.language;
+    db.settings = LMCore.defaultSettings();
+    db.settings.webhookUrl = wh;
+    db.settings.language = lg;   // мова — не константа алгоритму, скидання її не чіпає
+    mutated(); renderTab4();
+  });
+
+  /* Резервна копія */
+  tab.querySelector('#btnExport').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'lootmanager-backup-' + nowISO().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  tab.querySelector('#importFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (err) { banner(t('notJson', err.message)); return; }
+      const v = LMCore.validateImport(parsed);
+      if (!v.ok) { banner(t('importRejected', v.error)); return; }
+      if (!confirm(t('importConfirm', file.name))) return;
+      db = v.db; ui.calcResult = null; save(); renderAll(); renderTab4();
+      banner(t('imported'));
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+}
+
+/* ===== Ініціалізація ===== */
+document.addEventListener('DOMContentLoaded', () => {
+  db = load();
+  save();
+  document.getElementById('bannerClose').addEventListener('click', () => {
+    document.getElementById('banner').hidden = true;
+  });
+  document.getElementById('allianceSelect').addEventListener('change', e => {
+    db.activeAllianceId = e.target.value;
+    save(); renderAll();
+  });
+  document.getElementById('langSelect').addEventListener('change', e => {
+    db.settings.language = e.target.value;
+    save(); renderAll();
+  });
+  document.getElementById('btnSettings').addEventListener('click', () => switchTab(4));
+  document.querySelectorAll('nav.tabs .tab').forEach(b =>
+    b.addEventListener('click', () => switchTab(Number(b.dataset.tab))));
+  renderAll();
+});
+</script>
+</body>
+</html>
