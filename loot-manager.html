@@ -178,10 +178,16 @@ const LMCore = (() => {
     return { ...DEFAULTS, rarityWeights: { ...DEFAULTS.rarityWeights } };
   }
 
+  // v1.5: реальні класи гри (склад альянсу замовника)
   const CLASS_SEED = [
-    ['Танк', 0.2, 0.7, 0.1], ['Хил', 0.1, 0.1, 0.8], ['Фриз/Контроль', 0.5, 0.3, 0.2],
-    ['МДД', 0.8, 0.1, 0.1], ['РДД', 0.8, 0.1, 0.1], ['Маг', 0.8, 0.1, 0.1]
+    ['Маг', 0.8, 0.1, 0.1], ['Воин', 0.3, 0.6, 0.1], ['Жрец', 0.1, 0.1, 0.8],
+    ['Разбойник', 0.8, 0.1, 0.1], ['Лучник', 0.8, 0.1, 0.1]
   ];
+  // ваги для автостворюваних класів при імпорті складу (за назвою, без регістру)
+  const CLASS_WEIGHT_HINTS = {
+    'воин': [0.3, 0.6, 0.1], 'жрец': [0.1, 0.1, 0.8],
+    'танк': [0.2, 0.7, 0.1], 'хил': [0.1, 0.1, 0.8]
+  };
 
   function emptyAllianceData() {
     return { players: [], history: [], eventTypes: [], draftSession: null };
@@ -357,6 +363,61 @@ const LMCore = (() => {
     return { positions, scores };
   }
 
+  // v1.5: імпорт складу альянсу з тексту гри
+  // Формат: заголовок класу (можливо з емодзі) + рядки «N. Нік — Ур. LVL»
+  function parseRoster(text) {
+    const lines = String(text || '').split(/\r?\n/);
+    const playerRe = /^\s*\d+[.)]\s*(.+?)\s*[—–-]+\s*Ур\.?\s*(\d+)\s*$/u;
+    const groups = [];
+    let current = null;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      const m = line.match(playerRe);
+      if (m) {
+        if (!current) {
+          return { ok: false, error: 'гравець до першого заголовка класу: «' + line + '»' };
+        }
+        current.players.push({ nickname: m[1].trim(), level: Number(m[2]) });
+      } else {
+        const className = line.replace(/^[^\p{L}]+/u, '').trim();
+        if (!className) continue;                    // рядок із самих емодзі/розділювачів
+        current = { className, players: [] };
+        groups.push(current);
+      }
+    }
+    const total = groups.reduce((s, g) => s + g.players.length, 0);
+    if (total === 0) return { ok: false, error: 'не розпізнано жодного гравця' };
+    return { ok: true, groups: groups.filter(g => g.players.length > 0) };
+  }
+
+  // Upsert гравців за ніком (без регістру) і класів за назвою; нічого не видаляє,
+  // роль та isActive наявних гравців не чіпає.
+  function applyRoster(players, classes, groups, nowISO) {
+    let addedPlayers = 0, updatedPlayers = 0, addedClasses = 0;
+    for (const g of groups) {
+      let cls = classes.find(c => c.name.toLowerCase() === g.className.toLowerCase());
+      if (!cls) {
+        const w = CLASS_WEIGHT_HINTS[g.className.toLowerCase()] || [0.8, 0.1, 0.1];
+        cls = { id: uuid(), name: g.className, wDmg: w[0], wTaken: w[1], wHeal: w[2],
+          isArchived: false };
+        classes.push(cls); addedClasses++;
+      }
+      for (const rp of g.players) {
+        const existing = players.find(p =>
+          p.nickname.toLowerCase() === rp.nickname.toLowerCase());
+        if (existing) {
+          existing.classId = cls.id; existing.level = rp.level; updatedPlayers++;
+        } else {
+          players.push({ id: uuid(), nickname: rp.nickname, classId: cls.id,
+            role: 'Учасник', isActive: true, level: rp.level, createdAt: nowISO });
+          addedPlayers++;
+        }
+      }
+    }
+    return { addedPlayers, updatedPlayers, addedClasses };
+  }
+
   // v1.4: інтеграція з каталогом предметів (data/loot.json інструмента вилучення зображень)
   function mapCatalogRarity(n) {
     if (n >= 4) return 'legendary';
@@ -485,7 +546,8 @@ const LMCore = (() => {
 
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
            computeScores, historyLoad, distribute, topContributors, formatReport,
-           buildRecords, mapCatalogRarity, validateCatalog, syncCatalog };
+           buildRecords, mapCatalogRarity, validateCatalog, syncCatalog,
+           parseRoster, applyRoster };
 })();
 </script>
 
@@ -544,6 +606,12 @@ const I18N = {
     delAllianceConfirm: n => 'Удалить альянс «' + n + '» ВМЕСТЕ со всеми его игроками и ' +
       'историей? Действие нельзя отменить.',
     thNick: 'Ник', thClass: 'Класс', thStatus: 'Статус', thActive: 'Активен',
+    thLevel: 'Ур.',
+    importRosterBtn: '📋 Импортировать состав из текста',
+    rosterPh: 'Вставьте список из игры: заголовок класса («Маг», «🔨 Воин»…), ' +
+      'затем строки вида «1. Ник — Ур. 64». Существующие игроки обновятся, никто не удалится.',
+    rosterDone: (p, u, c) => 'Состав: +' + p + ' игроков, ' + u + ' обновлено, +' + c + ' классов ✓',
+    rosterFail: e => 'Импорт состава отклонён: ' + e,
     nickPh: 'Никнейм', addPlayer: 'Добавить игрока', enterNick: 'Введите никнейм.',
     nickExists: 'Игрок с таким ником уже есть в этом альянсе.',
     nickTaken: 'Такой ник уже занят.',
@@ -622,6 +690,12 @@ const I18N = {
     delAllianceConfirm: n => 'Delete alliance "' + n + '" TOGETHER with all its players and ' +
       'history? This cannot be undone.',
     thNick: 'Nickname', thClass: 'Class', thStatus: 'Role', thActive: 'Active',
+    thLevel: 'Lvl',
+    importRosterBtn: '📋 Import roster from text',
+    rosterPh: 'Paste the in-game list: a class header ("Маг", "🔨 Воин"…), ' +
+      'then lines like "1. Nick — Ур. 64". Existing players are updated, nobody is deleted.',
+    rosterDone: (p, u, c) => 'Roster: +' + p + ' players, ' + u + ' updated, +' + c + ' classes ✓',
+    rosterFail: e => 'Roster import rejected: ' + e,
     nickPh: 'Nickname', addPlayer: 'Add player', enterNick: 'Enter a nickname.',
     nickExists: 'A player with this nickname already exists in this alliance.',
     nickTaken: 'This nickname is taken.',
@@ -773,7 +847,8 @@ function renderTab1() {
           '<label class="inline"><input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
           (present ? ' checked' : '') + '> ' + t('present') + '</label>' +
           '<span class="nick">' + escapeHtml(p.nickname) + '</span>' +
-          '<span class="muted small">' + escapeHtml(className(p.classId)) + '</span>' +
+          '<span class="muted small">' + escapeHtml(className(p.classId)) +
+            (p.level ? ' · ' + t('thLevel') + ' ' + p.level : '') + '</span>' +
           controls + '</div>';
       }).join('');
   document.getElementById('tab1').innerHTML =
@@ -1219,11 +1294,14 @@ function renderTab4() {
     (r === sel ? ' selected' : '') + '>' + roleLabel(r) + '</option>').join('');
   const playersHtml =
     '<div class="table-wrap"><table><thead><tr><th>' + t('thNick') + '</th><th>' + t('thClass') +
-      '</th><th>' + t('thStatus') + '</th><th>' + t('thActive') + '</th><th></th></tr></thead><tbody>' +
+      '</th><th>' + t('thLevel') + '</th><th>' + t('thStatus') + '</th><th>' + t('thActive') +
+      '</th><th></th></tr></thead><tbody>' +
     paData.players.map(p => '<tr' + (p.isActive ? '' : ' class="cancelled"') + '>' +
       '<td><input type="text" class="inpNick" data-pid="' + p.id + '" value="' +
         escapeHtml(p.nickname) + '" maxlength="30" style="width:130px"></td>' +
       '<td><select class="selClass" data-pid="' + p.id + '">' + clsOptions(p.classId) + '</select></td>' +
+      '<td><input type="number" class="inpLevel" data-pid="' + p.id + '" min="1" step="1" value="' +
+        (p.level || '') + '" style="width:64px"></td>' +
       '<td><select class="selRole" data-pid="' + p.id + '">' + roleOpts(p.role) + '</select></td>' +
       '<td><input type="checkbox" class="chkActive" data-pid="' + p.id + '"' +
         (p.isActive ? ' checked' : '') + '></td>' +
@@ -1234,7 +1312,14 @@ function renderTab4() {
       '<input type="text" id="inpNewNick" placeholder="' + t('nickPh') + '" maxlength="30" class="grow">' +
       '<select id="selNewClass">' + clsOptions(null) + '</select>' +
       '<select id="selNewRole">' + roleOpts('Учасник') + '</select>' +
-      '<button class="btn btn-primary btn-sm" id="btnAddPlayer">' + t('addPlayer') + '</button></div>';
+      '<button class="btn btn-primary btn-sm" id="btnAddPlayer">' + t('addPlayer') + '</button></div>' +
+    '<details style="margin-top:10px"><summary class="small muted">' + t('importRosterBtn') +
+      '</summary>' +
+      '<textarea id="rosterText" rows="8" placeholder="' + escapeHtml(t('rosterPh')) +
+        '" style="margin-top:8px"></textarea>' +
+      '<div class="row" style="margin-top:6px">' +
+        '<button class="btn btn-primary btn-sm" id="btnImportRoster">' + t('importRosterBtn') +
+        '</button></div></details>';
 
   /* — Предмети — */
   const itemFilter = (ui.itemFilter || '').toLowerCase();
@@ -1443,6 +1528,21 @@ function wireTab4() {
     sel.addEventListener('change', e => {
       pa().players.find(x => x.id === e.target.dataset.pid).role = e.target.value; mutated();
     }));
+  tab.querySelectorAll('.inpLevel').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      const raw = Number(e.target.value);
+      p.level = raw >= 1 ? Math.round(raw) : null;
+      e.target.value = p.level || '';
+      mutated();
+    }));
+  tab.querySelector('#btnImportRoster').addEventListener('click', () => {
+    const parsed = LMCore.parseRoster(tab.querySelector('#rosterText').value);
+    if (!parsed.ok) { banner(t('rosterFail', parsed.error)); return; }
+    const res = LMCore.applyRoster(pa().players, db.classes, parsed.groups, nowISO());
+    mutated(); renderTab4();
+    banner(t('rosterDone', res.addedPlayers, res.updatedPlayers, res.addedClasses));
+  });
   tab.querySelectorAll('.chkActive').forEach(c =>
     c.addEventListener('change', e => {
       pa().players.find(x => x.id === e.target.dataset.pid).isActive = e.target.checked;

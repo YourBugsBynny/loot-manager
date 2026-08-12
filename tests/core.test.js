@@ -42,10 +42,10 @@ test('emptyDb: перший запуск за ТЗ §7.1', () => {
   assert.strictEqual(db.activeAllianceId, db.alliances[0].id);
   assert.deepStrictEqual(db.items, []);
   const names = db.classes.map(c => c.name);
-  assert.deepStrictEqual(names, ['Танк', 'Хил', 'Фриз/Контроль', 'МДД', 'РДД', 'Маг']);
-  const tank = db.classes[0];
+  assert.deepStrictEqual(names, ['Маг', 'Воин', 'Жрец', 'Разбойник', 'Лучник']);
+  const mag = db.classes[0];
   assert.deepStrictEqual(
-    [tank.wDmg, tank.wTaken, tank.wHeal, tank.isArchived], [0.2, 0.7, 0.1, false]);
+    [mag.wDmg, mag.wTaken, mag.wHeal, mag.isArchived], [0.8, 0.1, 0.1, false]);
   const pa = db.perAlliance[db.activeAllianceId];
   assert.deepStrictEqual(
     { p: pa.players, h: pa.history, e: pa.eventTypes, d: pa.draftSession },
@@ -433,6 +433,80 @@ test('formatReport: en використовує nameEn, ru — name', () => {
   const ru = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X', positions: pos,
     itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set(), lang: 'ru' });
   assert.ok(ru.includes('🔹 Гидра (1 шт.)'));
+});
+
+// ---- Імпорт складу з тексту (v1.5) ----
+const ROSTER_TEXT = [
+  'Маг ', '',
+  '1. Bunny — Ур. 66',
+  '2. Dead Angel — Ур. 65',
+  '3. АЛХИМИК — Ур. 59', '',
+  '🔨 Воин', '',
+  '1. Final Fantasy — Ур. 65',
+  '2. CØRĒ — Ур. 59', '',
+  '⚔️ Разбойник', '',
+  '1. Krähe — Ур. 64',
+  '2. ЧёTkuй — Ур. 55'
+].join('\n');
+
+test('parseRoster: заголовки з емодзі, нумерація, «— Ур. N», юнікод-ніки', () => {
+  const r = LMCore.parseRoster(ROSTER_TEXT);
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(r.groups.map(g => [g.className, g.players.length]),
+    [['Маг', 3], ['Воин', 2], ['Разбойник', 2]]);
+  assert.deepStrictEqual(r.groups[0].players[0], { nickname: 'Bunny', level: 66 });
+  assert.deepStrictEqual(r.groups[1].players[1], { nickname: 'CØRĒ', level: 59 });
+  assert.deepStrictEqual(r.groups[2].players[0], { nickname: 'Krähe', level: 64 });
+});
+test('parseRoster: гравці до першого класу або порожньо — помилка', () => {
+  assert.strictEqual(LMCore.parseRoster('1. Bunny — Ур. 66').ok, false);
+  assert.strictEqual(LMCore.parseRoster('   \n\n').ok, false);
+});
+test('applyRoster: створює класи з розумними вагами, апсертить гравців', () => {
+  const players = [
+    { id: 'p-old', nickname: 'bunny', classId: 'c-x', role: 'Офіцер', isActive: false,
+      createdAt: NOW }
+  ];
+  const classes = [mkClass('c-x', 'Стара', 0.5, 0.5, 0)];
+  const parsed = LMCore.parseRoster(ROSTER_TEXT);
+  const res = LMCore.applyRoster(players, classes, parsed.groups, NOW);
+  assert.deepStrictEqual(
+    { ap: res.addedPlayers, up: res.updatedPlayers, ac: res.addedClasses },
+    { ap: 6, up: 1, ac: 3 });
+  // класи: Воин — танкові ваги, решта — ДД
+  const voin = classes.find(c => c.name === 'Воин');
+  assert.deepStrictEqual([voin.wDmg, voin.wTaken, voin.wHeal], [0.3, 0.6, 0.1]);
+  const mag = classes.find(c => c.name === 'Маг');
+  assert.deepStrictEqual([mag.wDmg, mag.wTaken, mag.wHeal], [0.8, 0.1, 0.1]);
+  // наявний гравець оновлений: клас+рівень, роль/активність НЕ чіпаються
+  const bunny = players.find(p => p.id === 'p-old');
+  assert.deepStrictEqual(
+    { cls: bunny.classId, lvl: bunny.level, role: bunny.role, act: bunny.isActive },
+    { cls: mag.id, lvl: 66, role: 'Офіцер', act: false });
+  // новий гравець
+  const core = players.find(p => p.nickname === 'CØRĒ');
+  assert.deepStrictEqual({ role: core.role, act: core.isActive, lvl: core.level },
+    { role: 'Учасник', act: true, lvl: 59 });
+  // ідемпотентність
+  const res2 = LMCore.applyRoster(players, classes, parsed.groups, NOW);
+  assert.deepStrictEqual(
+    { ap: res2.addedPlayers, up: res2.updatedPlayers, ac: res2.addedClasses },
+    { ap: 0, up: 7, ac: 0 });
+  assert.strictEqual(players.length, 7);
+});
+test('applyRoster: Жрец отримує хільські ваги', () => {
+  const classes = [];
+  LMCore.applyRoster([], classes,
+    [{ className: 'Жрец', players: [{ nickname: 'S1Lnc', level: 65 }] }], NOW);
+  const zh = classes.find(c => c.name === 'Жрец');
+  assert.deepStrictEqual([zh.wDmg, zh.wTaken, zh.wHeal], [0.1, 0.1, 0.8]);
+});
+test('emptyDb v1.5: сід — п\'ять реальних класів гри', () => {
+  const db = LMCore.emptyDb(NOW);
+  assert.deepStrictEqual(db.classes.map(c => c.name),
+    ['Маг', 'Воин', 'Жрец', 'Разбойник', 'Лучник']);
+  const voin = db.classes[1];
+  assert.deepStrictEqual([voin.wDmg, voin.wTaken, voin.wHeal], [0.3, 0.6, 0.1]);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
