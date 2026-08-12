@@ -117,6 +117,32 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .roster-row:last-child { border-bottom: 0; }
 .roster-row .nick { min-width: 130px; font-weight: 600; }
 .roster-row.absent .nick { color: var(--muted); font-weight: 400; }
+
+/* Ростер вкладки 1: до 4 колонок, згруповано за класами (v1.9) */
+.roster-grid { display: grid; grid-template-columns: 1fr; gap: 2px 14px; }
+@media (min-width: 620px)  { .roster-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 940px)  { .roster-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1180px) { .roster-grid { grid-template-columns: repeat(4, 1fr); } }
+.roster-grid.advanced { grid-template-columns: 1fr; }
+@media (min-width: 780px)  { .roster-grid.advanced { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1180px) { .roster-grid.advanced { grid-template-columns: repeat(3, 1fr); } }
+.roster-class-head {
+  grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px;
+  margin: 12px 0 2px; padding-bottom: 3px; border-bottom: 1px solid var(--line);
+  font-weight: 600; letter-spacing: .02em;
+}
+.roster-class-head:first-child { margin-top: 2px; }
+.roster-cell { display: flex; align-items: center; gap: 8px; padding: 3px 2px;
+  min-width: 0; flex-wrap: nowrap; }
+.roster-cell > label.inline { flex: 1 1 auto; min-width: 0; }   /* нік стискається… */
+.roster-cell .nick { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.roster-cell.absent .nick { color: var(--muted); font-weight: 400; }
+.roster-cell .lvl, .roster-cell > label.inline.small, .roster-cell .metrics {
+  flex: 0 0 auto;                                               /* …решта не переноситься */
+}
+.roster-cell .lvl { font-variant-numeric: tabular-nums; }
+.roster-grid.advanced .roster-cell { flex-wrap: wrap; }         /* три числових поля — можна в 2 ряди */
 .metrics { display: flex; gap: 6px; flex-wrap: wrap; }
 .metrics label { display: flex; flex-direction: column; font-size: 0.72rem; color: var(--muted); }
 
@@ -869,6 +895,48 @@ function renderActiveTab() {
 function renderAll() { renderHeader(); renderActiveTab(); }
 
 /* ===== Вкладка 1: Подія та вклад (ТЗ §4.2) ===== */
+// v1.9: ростер сіткою до 4 колонок, згрупований за класами
+function rosterGridHtml(d, visible) {
+  const groups = new Map();
+  for (const p of visible) {
+    if (!groups.has(p.classId)) groups.set(p.classId, []);
+    groups.get(p.classId).push(p);
+  }
+  const order = db.classes.map(c => c.id).filter(id => groups.has(id));
+  for (const id of groups.keys()) if (!order.includes(id)) order.push(id);
+
+  const cell = p => {
+    const pr = d.presence[p.id] || {};
+    const present = !!pr.present;
+    const dis = present ? '' : ' disabled';
+    const controls = d.mode === 'simple'
+      ? '<label class="inline small" title="' + t('topFlag') + '">' +
+        '<input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
+        (pr.top ? ' checked' : '') + dis + '> ' + t('topFlag') + '</label>'
+      : '<span class="metrics">' + [['damage', 'Damage'], ['taken', 'Taken'], ['heal', 'Heal']]
+          .map(([k, label]) => '<label>' + label +
+            '<input type="number" min="0" step="1" class="inpMetric" data-pid="' + p.id +
+            '" data-metric="' + k + '" value="' + (pr[k] > 0 ? pr[k] : '') + '"' + dis +
+            '></label>').join('') + '</span>';
+    return '<div class="roster-cell' + (present ? '' : ' absent') + '">' +
+      '<label class="inline" title="' + t('present') + '">' +
+        '<input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
+        (present ? ' checked' : '') + '>' +
+        '<span class="nick">' + escapeHtml(p.nickname) + '</span></label>' +
+      (p.level ? '<span class="muted small lvl">' + p.level + '</span>' : '') +
+      controls + '</div>';
+  };
+
+  return '<div class="roster-grid' + (d.mode === 'advanced' ? ' advanced' : '') + '">' +
+    order.map(cid => {
+      const list = groups.get(cid);
+      const here = list.filter(p => d.presence[p.id] && d.presence[p.id].present).length;
+      return '<div class="roster-class-head">' + escapeHtml(className(cid)) +
+        '<span class="muted small">' + here + '/' + list.length + '</span></div>' +
+        list.map(cell).join('');
+    }).join('') + '</div>';
+}
+
 function renderTab1() {
   const d = draft();
   const players = pa().players.filter(p => p.isActive);
@@ -877,25 +945,7 @@ function renderTab1() {
     ? '<p class="muted">' + t('noPlayers') + '</p>'
     : visible.length === 0
     ? '<p class="muted">' + t('filterEmpty') + '</p>'
-    : visible.map(p => {
-        const pr = d.presence[p.id] || {};
-        const present = !!pr.present;
-        const dis = present ? '' : ' disabled';
-        const controls = d.mode === 'simple'
-          ? '<label class="inline"><input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
-            (pr.top ? ' checked' : '') + dis + '> ' + t('topFlag') + '</label>'
-          : '<span class="metrics">' + [['damage', 'Damage'], ['taken', 'Taken'], ['heal', 'Heal']]
-              .map(([k, t]) => '<label>' + t + '<input type="number" min="0" step="1" class="inpMetric" ' +
-                'data-pid="' + p.id + '" data-metric="' + k + '" value="' +
-                (pr[k] > 0 ? pr[k] : '') + '"' + dis + '></label>').join('') + '</span>';
-        return '<div class="roster-row' + (present ? '' : ' absent') + '">' +
-          '<label class="inline"><input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
-          (present ? ' checked' : '') + '> ' + t('present') + '</label>' +
-          '<span class="nick">' + escapeHtml(p.nickname) + '</span>' +
-          '<span class="muted small">' + escapeHtml(className(p.classId)) +
-            (p.level ? ' · ' + t('thLevel') + ' ' + p.level : '') + '</span>' +
-          controls + '</div>';
-      }).join('');
+    : rosterGridHtml(d, visible);
   document.getElementById('tab1').innerHTML =
     '<div class="card">' +
       '<h2>' + t('eventH2') + '</h2>' +
