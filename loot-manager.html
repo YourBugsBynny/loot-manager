@@ -107,6 +107,16 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
   border-radius: 4px; margin-right: 4px; }
 .chip .item-ico { margin-right: 0; }
 
+.tile-grid { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+  margin-top: 6px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  padding: 0; cursor: pointer; overflow: hidden; }
+.tile:hover, .tile:focus-visible { border-color: var(--accent); }
+.tile img { display: block; max-width: min(210px, 44vw); max-height: 132px; }
+.tile .tile-label { display: none; padding: 5px 12px; font-size: 0.88rem;
+  align-items: center; gap: 6px; }
+.tile.no-img .tile-label { display: inline-flex; }
+
 .roster-row { display: flex; gap: 10px; align-items: center; padding: 7px 4px;
   border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .roster-row:last-child { border-bottom: 0; }
@@ -951,18 +961,31 @@ function invalidateCalc() {  // будь-яка зміна вхідних дан
   d.overrides = {}; d.rollMemo = {};
 }
 
-function quickPickChipsHtml(filter) {
+// v1.6: плитковий пікер — картки предметів (cards/<uid>_<мова>.jpg) або чип-фолбек
+function quickPickHtml(filter) {
   const f = (filter || '').trim().toLowerCase();
   const pool = db.items.filter(i => !i.isArchived &&
-    (!f || i.name.toLowerCase().includes(f)));
+    (!f || i.name.toLowerCase().includes(f) ||
+     (i.nameEn && i.nameEn.toLowerCase().includes(f))));
   if (db.items.filter(i => !i.isArchived).length === 0) return '';
   const shown = pool.slice(0, 24);
-  return '<span class="muted small">' + t('quickPick') + '</span>' +
-    shown.map(i => '<button type="button" class="chip" data-iid="' + i.id + '">' +
+  const tiles = shown.map(i => {
+    const label = '<span class="tile-label">' +
       (i.icon ? itemIcon(i) : '<span class="dot ' + i.rarity + '"></span>') +
-      escapeHtml(itemDisplayName(i)) + '</button>').join('') +
+      escapeHtml(itemDisplayName(i)) + '</span>';
+    const img = i.catalogUid
+      ? '<img src="cards/' + i.catalogUid + '_' + lang() + '.jpg" alt="' +
+        escapeHtml(itemDisplayName(i)) + '" loading="lazy" ' +
+        'onerror="this.parentNode.classList.add(\'no-img\'); this.remove()">'
+      : '';
+    return '<button type="button" class="tile' + (img ? '' : ' no-img') + '" data-iid="' +
+      i.id + '" title="' + escapeHtml(itemDisplayName(i)) + '">' + img + label + '</button>';
+  }).join('');
+  return '<span class="muted small">' + t('quickPick') + '</span>' +
+    '<div class="tile-grid">' + tiles + '</div>' +
     (pool.length > shown.length
-      ? '<span class="muted small">' + t('moreItems', pool.length - shown.length) + '</span>' : '');
+      ? '<div class="muted small" style="margin-top:4px">' +
+        t('moreItems', pool.length - shown.length) + '</div>' : '');
 }
 
 function renderTab2() {
@@ -1020,7 +1043,7 @@ function renderTab2() {
           ' <input type="number" id="inpQty" min="1" step="1" value="1"></label>' +
         '<button class="btn btn-primary" id="btnAddDrop">' + t('add') + '</button>' +
       '</div>' +
-      '<div class="row" id="quickPick" style="margin-top:8px">' + quickPickChipsHtml('') + '</div>' +
+      '<div id="quickPick" style="margin-top:8px">' + quickPickHtml('') + '</div>' +
       '<div id="quickItemForm" hidden style="margin-top:10px; border-top:1px dashed var(--line); padding-top:10px">' +
         '<p class="small muted">' + t('quickHint') + '</p>' +
         '<div class="row">' +
@@ -1044,12 +1067,12 @@ function renderTab2() {
 
   const tab = document.getElementById('tab2');
   tab.querySelector('#quickPick').addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    addDrop(chip.dataset.iid, Number(tab.querySelector('#inpQty').value) || 1);
+    const pick = e.target.closest('button[data-iid]');
+    if (!pick) return;
+    addDrop(pick.dataset.iid, Number(tab.querySelector('#inpQty').value) || 1);
   });
   tab.querySelector('#itemSearch').addEventListener('input', e => {
-    tab.querySelector('#quickPick').innerHTML = quickPickChipsHtml(e.target.value);
+    tab.querySelector('#quickPick').innerHTML = quickPickHtml(e.target.value);
   });
   tab.querySelector('#btnAddDrop').addEventListener('click', () => {
     const name = tab.querySelector('#itemSearch').value.trim();
