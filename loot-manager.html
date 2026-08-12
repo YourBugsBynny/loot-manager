@@ -92,6 +92,18 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .badge.info { background: var(--accent); }
 .badge.plain { background: var(--muted); }
 
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 12px; cursor: pointer; background: var(--card); font-size: 0.88rem;
+}
+.chip:hover { border-color: var(--accent); }
+.chip .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.chip .dot.common { background: var(--r-common); }
+.chip .dot.rare { background: var(--r-rare); }
+.chip .dot.epic { background: var(--r-epic); }
+.chip .dot.legendary { background: var(--r-legendary); }
+
 .roster-row { display: flex; gap: 10px; align-items: center; padding: 7px 4px;
   border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .roster-row:last-child { border-bottom: 0; }
@@ -173,7 +185,7 @@ const LMCore = (() => {
   }
 
   function emptyDb(nowISO) {
-    const alliance = { id: uuid(), name: 'Мій альянс', createdAt: nowISO };
+    const alliance = { id: uuid(), name: 'Мой альянс', createdAt: nowISO };
     return {
       schemaVersion: 1,
       activeAllianceId: alliance.id,
@@ -461,7 +473,8 @@ const I18N = {
     quickHint: 'Предмета нет в каталоге — создайте его:', qiNamePh: 'Название',
     fitsLabel: 'Кому подходит (пусто = всем):', createAdd: 'Создать и добавить',
     nothingAdded: 'Пока ничего не добавлено.', claimsH2: 'Заявки (кто что хочет)',
-    noPresent: 'Нет присутствующих игроков — отметьте их во вкладке «1. Событие и вклад».',
+    quickPick: 'Быстрый выбор:', moreItems: n => '+ ещё ' + n + ' — уточните поиск',
+    claimAutoPresent: 'Отметка «хочет» автоматически помечает игрока присутствующим (вклад — во вкладке 1).',
     addLootFirst: 'Добавьте добычу выше, чтобы проставить заявки.', playerTh: 'Игрок',
     enterItemName: 'Введите название предмета.', itemExists: 'Предмет с таким названием уже существует.',
     calc: '⚖️ Рассчитать распределение',
@@ -535,7 +548,8 @@ const I18N = {
     quickHint: 'Item is not in the catalog — create it:', qiNamePh: 'Name',
     fitsLabel: 'Fits classes (empty = all):', createAdd: 'Create & add',
     nothingAdded: 'Nothing added yet.', claimsH2: 'Claims (who wants what)',
-    noPresent: 'No present players — mark them on the "1. Event & Contribution" tab.',
+    quickPick: 'Quick pick:', moreItems: n => '+ ' + n + ' more — refine the search',
+    claimAutoPresent: 'Checking a claim automatically marks the player as present (contribution is on tab 1).',
     addLootFirst: 'Add loot above to set claims.', playerTh: 'Player',
     enterItemName: 'Enter an item name.', itemExists: 'An item with this name already exists.',
     calc: '⚖️ Calculate distribution',
@@ -798,10 +812,22 @@ function invalidateCalc() {  // будь-яка зміна вхідних дан
   d.overrides = {}; d.rollMemo = {};
 }
 
+function quickPickChipsHtml(filter) {
+  const f = (filter || '').trim().toLowerCase();
+  const pool = db.items.filter(i => !i.isArchived &&
+    (!f || i.name.toLowerCase().includes(f)));
+  if (db.items.filter(i => !i.isArchived).length === 0) return '';
+  const shown = pool.slice(0, 24);
+  return '<span class="muted small">' + t('quickPick') + '</span>' +
+    shown.map(i => '<button type="button" class="chip" data-iid="' + i.id + '">' +
+      '<span class="dot ' + i.rarity + '"></span>' + escapeHtml(i.name) + '</button>').join('') +
+    (pool.length > shown.length
+      ? '<span class="muted small">' + t('moreItems', pool.length - shown.length) + '</span>' : '');
+}
+
 function renderTab2() {
   const d = draft();
   const itemsById = byId(db.items);
-  const present = presentPlayers();
   const dropRows = d.drops.length === 0
     ? '<p class="muted">' + t('nothingAdded') + '</p>'
     : d.drops.map(dr => {
@@ -814,9 +840,11 @@ function renderTab2() {
       }).join('');
 
   const dropItems = d.drops.map(dr => itemsById[dr.itemId]).filter(Boolean);
+  // ТЗ §4.3 (v1.3): заявки доступні всім активним; галочка сама позначає присутність
+  const claimants = pa().players.filter(p => p.isActive);
   let claimsHtml;
-  if (present.length === 0) {
-    claimsHtml = '<p class="muted">' + t('noPresent') + '</p>';
+  if (claimants.length === 0) {
+    claimsHtml = '<p class="muted">' + t('noPlayers') + '</p>';
   } else if (dropItems.length === 0) {
     claimsHtml = '<p class="muted">' + t('addLootFirst') + '</p>';
   } else {
@@ -826,16 +854,17 @@ function renderTab2() {
       '<div class="claims-table table-wrap"><table><thead><tr><th>' + t('playerTh') + '</th>' +
       dropItems.map(it => '<th>' + escapeHtml(it.name) + '</th>').join('') +
       '</tr></thead><tbody>' +
-      present.map(p => '<tr><td><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
+      claimants.map(p => '<tr><td><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
         escapeHtml(className(p.classId)) + '</span></td>' +
         dropItems.map(it => '<td>' + chk(p.id, it.id) + '</td>').join('') + '</tr>').join('') +
       '</tbody></table></div>' +
       '<div class="claims-cards">' +
-      present.map(p => '<div class="card"><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
+      claimants.map(p => '<div class="card"><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
         escapeHtml(className(p.classId)) + '</span><div class="row" style="margin-top:6px">' +
         dropItems.map(it => '<label class="inline small">' + chk(p.id, it.id) + ' ' +
           escapeHtml(it.name) + '</label>').join('') + '</div></div>').join('') +
-      '</div>';
+      '</div>' +
+      '<p class="muted small" style="margin-top:6px">' + t('claimAutoPresent') + '</p>';
   }
 
   document.getElementById('tab2').innerHTML =
@@ -850,6 +879,7 @@ function renderTab2() {
           ' <input type="number" id="inpQty" min="1" step="1" value="1"></label>' +
         '<button class="btn btn-primary" id="btnAddDrop">' + t('add') + '</button>' +
       '</div>' +
+      '<div class="row" id="quickPick" style="margin-top:8px">' + quickPickChipsHtml('') + '</div>' +
       '<div id="quickItemForm" hidden style="margin-top:10px; border-top:1px dashed var(--line); padding-top:10px">' +
         '<p class="small muted">' + t('quickHint') + '</p>' +
         '<div class="row">' +
@@ -872,6 +902,14 @@ function renderTab2() {
     '<div class="card"><h2>' + t('claimsH2') + '</h2>' + claimsHtml + '</div>';
 
   const tab = document.getElementById('tab2');
+  tab.querySelector('#quickPick').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    addDrop(chip.dataset.iid, Number(tab.querySelector('#inpQty').value) || 1);
+  });
+  tab.querySelector('#itemSearch').addEventListener('input', e => {
+    tab.querySelector('#quickPick').innerHTML = quickPickChipsHtml(e.target.value);
+  });
   tab.querySelector('#btnAddDrop').addEventListener('click', () => {
     const name = tab.querySelector('#itemSearch').value.trim();
     if (!name) { banner(t('enterItemName')); return; }
@@ -922,7 +960,10 @@ function renderTab2() {
     c.addEventListener('change', e => {
       const { pid, iid } = e.target.dataset;
       const list = claimsOf(pid);
-      if (e.target.checked) { if (!list.includes(iid)) list.push(iid); }
+      if (e.target.checked) {
+        if (!list.includes(iid)) list.push(iid);
+        presenceOf(pid).present = true;   // заявка ⇒ присутність (ТЗ §4.3, v1.3)
+      }
       else { const idx = list.indexOf(iid); if (idx >= 0) list.splice(idx, 1); }
       invalidateCalc(); save();
     }));

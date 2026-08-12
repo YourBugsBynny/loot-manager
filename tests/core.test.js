@@ -38,7 +38,7 @@ test('emptyDb: перший запуск за ТЗ §7.1', () => {
   const db = LMCore.emptyDb(NOW);
   assert.strictEqual(db.schemaVersion, 1);
   assert.strictEqual(db.alliances.length, 1);
-  assert.strictEqual(db.alliances[0].name, 'Мій альянс');
+  assert.strictEqual(db.alliances[0].name, 'Мой альянс');
   assert.strictEqual(db.activeAllianceId, db.alliances[0].id);
   assert.deepStrictEqual(db.items, []);
   const names = db.classes.map(c => c.name);
