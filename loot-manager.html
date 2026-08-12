@@ -103,6 +103,9 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .chip .dot.rare { background: var(--r-rare); }
 .chip .dot.epic { background: var(--r-epic); }
 .chip .dot.legendary { background: var(--r-legendary); }
+.item-ico { width: 22px; height: 22px; object-fit: contain; vertical-align: -5px;
+  border-radius: 4px; margin-right: 4px; }
+.chip .item-ico { margin-right: 0; }
 
 .roster-row { display: flex; gap: 10px; align-items: center; padding: 7px 4px;
   border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -354,6 +357,47 @@ const LMCore = (() => {
     return { positions, scores };
   }
 
+  // v1.4: інтеграція з каталогом предметів (data/loot.json інструмента вилучення зображень)
+  function mapCatalogRarity(n) {
+    if (n >= 4) return 'legendary';
+    if (n === 3) return 'epic';
+    if (n === 2) return 'rare';
+    return 'common';
+  }
+  function validateCatalog(raw) {
+    if (!Array.isArray(raw)) return { ok: false, error: 'очікується масив каталогу' };
+    for (const e of raw) {
+      if (!e || typeof e.uid !== 'number' || typeof e.ru !== 'string' || !e.ru) {
+        return { ok: false, error: 'запис каталогу без uid або ru-назви' };
+      }
+    }
+    return { ok: true };
+  }
+  // Upsert у items: за catalogUid; ручні предмети з тією ж назвою усиновлюються, не дублюються.
+  // Нічого не видаляє; повертає {added, updated}.
+  function syncCatalog(items, catalog) {
+    let added = 0, updated = 0;
+    for (const c of catalog) {
+      let item = items.find(i => i.catalogUid === c.uid);
+      if (!item) {
+        item = items.find(i => (i.catalogUid === undefined || i.catalogUid === null) &&
+          i.name.toLowerCase() === c.ru.toLowerCase());
+      }
+      const fields = {
+        catalogUid: c.uid, name: c.ru, nameEn: c.en || '', icon: c.icon || '',
+        rarity: mapCatalogRarity(c.rarity),
+        rarityLabelRu: c.rarity_ru || '', rarityLabelEn: c.rarity_en || ''
+      };
+      if (item) { Object.assign(item, fields); updated++; }
+      else {
+        items.push(Object.assign({ id: uuid(), category: 'Інше', targetClasses: [],
+          isArchived: false }, fields));
+        added++;
+      }
+    }
+    return { added, updated };
+  }
+
   // ТЗ §6: «ТОП Вклад» — простий режим: прапорці; розширений: максимум балу
   function topContributors(session, scores) {
     if (session.mode === 'simple') {
@@ -402,7 +446,8 @@ const LMCore = (() => {
         entries.push('@' + nick + ' [' + clsName + topMark + ']');
       }
       if (freeCount > 0) entries.push(L.free);
-      lines.push('🔹 ' + (item ? item.name : '?') + ' (' + posList.length + ' ' + L.pcs + ') — ' +
+      const displayName = item ? ((lang === 'en' && item.nameEn) ? item.nameEn : item.name) : '?';
+      lines.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
         entries.join(', '));
     }
     return L.header(allianceName, eventTypeName) + '\n\n' +
@@ -440,7 +485,7 @@ const LMCore = (() => {
 
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
            computeScores, historyLoad, distribute, topContributors, formatReport,
-           buildRecords };
+           buildRecords, mapCatalogRarity, validateCatalog, syncCatalog };
 })();
 </script>
 
@@ -504,6 +549,9 @@ const I18N = {
     nickTaken: 'Такой ник уже занят.',
     playerHasHistory: 'У игрока есть записи в истории — только деактивация (снимите галочку «Активен»).',
     delPlayerConfirm: n => 'Удалить игрока «' + n + '»?',
+    syncCatalogBtn: '🔄 Синхронизировать с каталогом',
+    syncDone: (a, u) => 'Каталог: +' + a + ' новых, ' + u + ' обновлено ✓',
+    syncPickHint: 'Файл data/loot.json недоступен автоматически — выберите его вручную.',
     searchCatalogPh: 'Поиск в каталоге', thName: 'Название', thCategory: 'Категория',
     thRarity: 'Редкость', thClasses: 'Классы', forAll: 'всем',
     archive: 'Архивировать', unarchive: 'Разархивировать',
@@ -579,6 +627,9 @@ const I18N = {
     nickTaken: 'This nickname is taken.',
     playerHasHistory: 'This player has history records — deactivate instead (uncheck "Active").',
     delPlayerConfirm: n => 'Delete player "' + n + '"?',
+    syncCatalogBtn: '🔄 Sync with catalog',
+    syncDone: (a, u) => 'Catalog: +' + a + ' new, ' + u + ' updated ✓',
+    syncPickHint: 'data/loot.json is not reachable automatically — pick the file manually.',
     searchCatalogPh: 'Search the catalog', thName: 'Name', thCategory: 'Category',
     thRarity: 'Rarity', thClasses: 'Classes', forAll: 'all',
     archive: 'Archive', unarchive: 'Unarchive',
@@ -795,8 +846,21 @@ function className(classId) {
 /* ===== Вкладка 2: Здобич і заявки (ТЗ §4.3) ===== */
 const CATEGORIES = ['Зброя', 'Броня', 'Біжутерія', 'Ресурси', 'Інше']; // канонічні значення в базі
 
-function rarityBadge(rarity) {
-  return '<span class="badge ' + rarity + '">' + rarityLabel(rarity) + '</span>';
+function rarityBadge(item) {
+  const label = lang() === 'en'
+    ? (item.rarityLabelEn || rarityLabel(item.rarity))
+    : (item.rarityLabelRu || rarityLabel(item.rarity));
+  return '<span class="badge ' + item.rarity + '">' + escapeHtml(label) + '</span>';
+}
+function itemIcon(item) {
+  return item && item.icon
+    ? '<img class="item-ico" src="' + escapeHtml(item.icon) + '" alt="" loading="lazy" ' +
+      'onerror="this.remove()">'
+    : '';
+}
+function itemDisplayName(item) {
+  if (!item) return '?';
+  return lang() === 'en' && item.nameEn ? item.nameEn : item.name;
 }
 function presentPlayers() {
   const d = draft();
@@ -820,7 +884,8 @@ function quickPickChipsHtml(filter) {
   const shown = pool.slice(0, 24);
   return '<span class="muted small">' + t('quickPick') + '</span>' +
     shown.map(i => '<button type="button" class="chip" data-iid="' + i.id + '">' +
-      '<span class="dot ' + i.rarity + '"></span>' + escapeHtml(i.name) + '</button>').join('') +
+      (i.icon ? itemIcon(i) : '<span class="dot ' + i.rarity + '"></span>') +
+      escapeHtml(itemDisplayName(i)) + '</button>').join('') +
     (pool.length > shown.length
       ? '<span class="muted small">' + t('moreItems', pool.length - shown.length) + '</span>' : '');
 }
@@ -832,8 +897,9 @@ function renderTab2() {
     ? '<p class="muted">' + t('nothingAdded') + '</p>'
     : d.drops.map(dr => {
         const it = itemsById[dr.itemId];
-        return '<div class="roster-row"><span class="grow">' + escapeHtml(it ? it.name : '?') +
-          ' ' + (it ? rarityBadge(it.rarity) : '') + '</span>' +
+        return '<div class="roster-row"><span class="grow">' + itemIcon(it) +
+          escapeHtml(itemDisplayName(it)) +
+          ' ' + (it ? rarityBadge(it) : '') + '</span>' +
           '<label class="inline small">' + t('pcsShort') + ' <input type="number" min="1" step="1" class="inpDropQty" ' +
             'data-iid="' + dr.itemId + '" value="' + dr.quantity + '"></label>' +
           '<button class="btn btn-sm btn-danger btnDropDel" data-iid="' + dr.itemId + '">✕</button></div>';
@@ -852,7 +918,7 @@ function renderTab2() {
       '" data-iid="' + iid + '"' + (claimsOf(pid).includes(iid) ? ' checked' : '') + '>';
     claimsHtml =
       '<div class="claims-table table-wrap"><table><thead><tr><th>' + t('playerTh') + '</th>' +
-      dropItems.map(it => '<th>' + escapeHtml(it.name) + '</th>').join('') +
+      dropItems.map(it => '<th>' + itemIcon(it) + escapeHtml(itemDisplayName(it)) + '</th>').join('') +
       '</tr></thead><tbody>' +
       claimants.map(p => '<tr><td><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
         escapeHtml(className(p.classId)) + '</span></td>' +
@@ -862,7 +928,7 @@ function renderTab2() {
       claimants.map(p => '<div class="card"><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
         escapeHtml(className(p.classId)) + '</span><div class="row" style="margin-top:6px">' +
         dropItems.map(it => '<label class="inline small">' + chk(p.id, it.id) + ' ' +
-          escapeHtml(it.name) + '</label>').join('') + '</div></div>').join('') +
+          itemIcon(it) + escapeHtml(itemDisplayName(it)) + '</label>').join('') + '</div></div>').join('') +
       '</div>' +
       '<p class="muted small" style="margin-top:6px">' + t('claimAutoPresent') + '</p>';
   }
@@ -913,8 +979,9 @@ function renderTab2() {
   tab.querySelector('#btnAddDrop').addEventListener('click', () => {
     const name = tab.querySelector('#itemSearch').value.trim();
     if (!name) { banner(t('enterItemName')); return; }
-    const item = db.items.find(i =>
-      i.name.toLowerCase() === name.toLowerCase() && !i.isArchived);
+    const item = db.items.find(i => !i.isArchived &&
+      (i.name.toLowerCase() === name.toLowerCase() ||
+       (i.nameEn && i.nameEn.toLowerCase() === name.toLowerCase())));
     if (!item) {
       const f = tab.querySelector('#quickItemForm');
       f.hidden = false;
@@ -1026,8 +1093,8 @@ function renderTab3() {
         .map(p => '<option value="' + p.id + '"' + (p.id === pos.winnerId ? ' selected' : '') + '>' +
           escapeHtml(p.nickname) + '</option>').join('');
       return '<div class="pos-row"><div class="pos-head">' +
-        '<b>' + escapeHtml(item ? item.name : '?') + '</b> ' +
-        (item ? rarityBadge(item.rarity) : '') +
+        itemIcon(item) + '<b>' + escapeHtml(itemDisplayName(item)) + '</b> ' +
+        (item ? rarityBadge(item) : '') +
         ' <span class="muted small">' + t('copyN', pos.copyIndex + 1) + '</span>' +
         (winner
           ? ' → <b>' + escapeHtml(winner.nickname) + '</b>' +
@@ -1174,11 +1241,13 @@ function renderTab4() {
   const itemsShown = db.items.filter(i => !itemFilter || i.name.toLowerCase().includes(itemFilter));
   const itemsHtml =
     '<div class="row"><input type="search" id="inpItemFilter" class="grow" placeholder="' +
-      t('searchCatalogPh') + '" value="' + escapeHtml(ui.itemFilter || '') + '"></div>' +
+      t('searchCatalogPh') + '" value="' + escapeHtml(ui.itemFilter || '') + '">' +
+      '<button class="btn btn-sm" id="btnSyncCatalog">' + t('syncCatalogBtn') + '</button>' +
+      '<input type="file" id="catalogFile" accept=".json,application/json" hidden></div>' +
     '<div class="table-wrap"><table><thead><tr><th>' + t('thName') + '</th><th>' + t('thCategory') +
       '</th><th>' + t('thRarity') + '</th><th>' + t('thClasses') + '</th><th></th></tr></thead><tbody>' +
     itemsShown.map(i => '<tr' + (i.isArchived ? ' class="cancelled"' : '') + '>' +
-      '<td><input type="text" class="inpItemName" data-iid="' + i.id + '" value="' +
+      '<td>' + itemIcon(i) + '<input type="text" class="inpItemName" data-iid="' + i.id + '" value="' +
         escapeHtml(i.name) + '" maxlength="60" style="width:150px"></td>' +
       '<td><select class="selItemCat" data-iid="' + i.id + '">' + CATEGORIES.map(c =>
         '<option value="' + c + '"' + (c === i.category ? ' selected' : '') + '>' +
@@ -1394,6 +1463,34 @@ function wireTab4() {
     }));
 
   /* Предмети */
+  const applyCatalog = parsed => {
+    const v = LMCore.validateCatalog(parsed);
+    if (!v.ok) { banner(t('importRejected', v.error)); return; }
+    const res = LMCore.syncCatalog(db.items, parsed);
+    mutated(); renderTab4();
+    banner(t('syncDone', res.added, res.updated));
+  };
+  tab.querySelector('#btnSyncCatalog').addEventListener('click', async () => {
+    try {
+      const r = await fetch('data/loot.json', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      applyCatalog(await r.json());
+    } catch (err) {   // file:// або нема сервера — просимо файл вручну
+      banner(t('syncPickHint'));
+      tab.querySelector('#catalogFile').click();
+    }
+  });
+  tab.querySelector('#catalogFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { applyCatalog(JSON.parse(reader.result)); }
+      catch (err) { banner(t('notJson', err.message)); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
   tab.querySelector('#inpItemFilter').addEventListener('input', e => {
     ui.itemFilter = e.target.value; renderTab4();
     const inp = document.getElementById('inpItemFilter');

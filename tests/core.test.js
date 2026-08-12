@@ -365,5 +365,75 @@ test('formatReport: невідома мова падає на російську
   assert.ok(text.endsWith('Спасибо всем за участие! Предметы ждут в магазине альянса.'));
 });
 
+// ---- Синхронізація з каталогом (v1.4) ----
+const CAT = [
+  { uid: 1, ru: 'Гидра тёмного прилива', en: 'Dark Tide Hydra', rarity: 4,
+    rarity_ru: 'Уник.', rarity_en: 'Unique', creature: '2219_1', confident: true,
+    icon: 'icons/loot_002.png', stats: [['Уклонение', 'Evasion', '+180']] },
+  { uid: 2, ru: 'Орк-командир', en: 'Orc Commander', rarity: 2,
+    rarity_ru: 'Ред.', rarity_en: 'Rare', creature: '2203', confident: true,
+    icon: 'icons/loot_009.png', stats: [] },
+  { uid: 3, ru: 'Тотем гнева ветра', en: 'Totem of Wind Wrath', rarity: 0,
+    rarity_ru: 'Обыч.', rarity_en: 'Common', creature: '', confident: false,
+    icon: '', stats: [] }
+];
+test('mapCatalogRarity: 6 рівнів гри → 4 рівні механіки', () => {
+  assert.deepStrictEqual([0, 1, 2, 3, 4, 5].map(LMCore.mapCatalogRarity),
+    ['common', 'common', 'rare', 'epic', 'legendary', 'legendary']);
+});
+test('validateCatalog: масив з uid+ru проходить, сміття — ні', () => {
+  assert.strictEqual(LMCore.validateCatalog(CAT).ok, true);
+  assert.strictEqual(LMCore.validateCatalog({}).ok, false);
+  assert.strictEqual(LMCore.validateCatalog([{ ru: 'без uid' }]).ok, false);
+});
+test('syncCatalog: додає нові предмети з усіма полями', () => {
+  const items = [];
+  const res = LMCore.syncCatalog(items, CAT);
+  assert.deepStrictEqual({ a: res.added, u: res.updated }, { a: 3, u: 0 });
+  const hydra = items.find(i => i.catalogUid === 1);
+  assert.deepStrictEqual({
+    name: hydra.name, nameEn: hydra.nameEn, rarity: hydra.rarity,
+    lru: hydra.rarityLabelRu, len: hydra.rarityLabelEn,
+    icon: hydra.icon, cat: hydra.category, tc: hydra.targetClasses, arch: hydra.isArchived
+  }, { name: 'Гидра тёмного прилива', nameEn: 'Dark Tide Hydra', rarity: 'legendary',
+       lru: 'Уник.', len: 'Unique', icon: 'icons/loot_002.png', cat: 'Інше',
+       tc: [], arch: false });
+  assert.match(hydra.id, /^[0-9a-f-]{36}$/i);
+});
+test('syncCatalog: оновлює за catalogUid, усиновлює за назвою, ідемпотентний', () => {
+  const items = [
+    // ручний предмет з таким самим ім'ям (інший регістр) — мусить бути усиновлений, не задубльований
+    { id: 'manual-1', name: 'орк-командир', category: 'Зброя', targetClasses: ['c-tank'],
+      rarity: 'common', isArchived: false }
+  ];
+  const r1 = LMCore.syncCatalog(items, CAT);
+  assert.deepStrictEqual({ a: r1.added, u: r1.updated }, { a: 2, u: 1 });
+  const orc = items.find(i => i.catalogUid === 2);
+  assert.strictEqual(orc.id, 'manual-1');                  // той самий запис
+  assert.strictEqual(orc.name, 'Орк-командир');            // назва з каталогу
+  assert.deepStrictEqual(orc.targetClasses, ['c-tank']);   // ручні класи збережені
+  assert.strictEqual(orc.rarity, 'rare');
+  // повторний прогін: нічого нового
+  const r2 = LMCore.syncCatalog(items, CAT);
+  assert.deepStrictEqual({ a: r2.added, u: r2.updated, len: items.length },
+    { a: 0, u: 3, len: 3 });
+  // оновлення назви в каталозі підтягується за uid
+  const cat2 = CAT.map(c => c.uid === 1 ? { ...c, ru: 'Гидра (нова)' } : c);
+  LMCore.syncCatalog(items, cat2);
+  assert.strictEqual(items.find(i => i.catalogUid === 1).name, 'Гидра (нова)');
+});
+test('formatReport: en використовує nameEn, ru — name', () => {
+  const itemsById = { x: { id: 'x', name: 'Гидра', nameEn: 'Hydra', category: 'Інше',
+    targetClasses: [], rarity: 'epic', isArchived: false } };
+  const pos = [{ key: 'x#0', itemId: 'x', copyIndex: 0, winnerId: 'p-a', priority: 0,
+    rolled: false, manual: false, classBonus: false, candidates: [] }];
+  const en = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X', positions: pos,
+    itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set(), lang: 'en' });
+  assert.ok(en.includes('🔹 Hydra (1 pcs)'));
+  const ru = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X', positions: pos,
+    itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set(), lang: 'ru' });
+  assert.ok(ru.includes('🔹 Гидра (1 шт.)'));
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
