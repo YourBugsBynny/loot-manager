@@ -67,6 +67,7 @@ main { padding: 12px; max-width: 980px; margin: 0 auto; }
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 .btn-sm { padding: 4px 9px; font-size: 0.85rem; border-radius: 7px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
 input[type="text"], input[type="number"], input[type="date"], input[type="search"], select, textarea {
   border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: var(--card);
@@ -261,7 +262,8 @@ const LMCore = (() => {
   function computeScores(session, playersById, classesById, settings) {
     const scores = {};
     const present = Object.keys(session.presence || {})
-      .filter(pid => session.presence[pid] && session.presence[pid].present && playersById[pid]);
+      .filter(pid => session.presence[pid] && session.presence[pid].present &&
+        playersById[pid] && playersById[pid].isActive !== false);   // вибулі не рахуються
     if (session.mode === 'simple') {
       for (const pid of present) {
         scores[pid] = session.presence[pid].top ? settings.scoreTop : settings.scorePresent;
@@ -584,8 +586,10 @@ const I18N = {
     eventH2: 'Событие', eventPh: 'Тип события (напр., Вторжение монстров)',
     modeLabel: 'Режим вклада:', modeSimple: 'Простой (ТОП)', modeAdvanced: 'Расширенный (числа)',
     presenceH2: 'Присутствующие и вклад', allPresent: 'Все присутствуют', nonePresent: 'Снять всех',
+    classFilterLabel: 'Класс:', filterAll: 'Все',
     present: 'Присутствует', topFlag: 'ТОП',
     noPlayers: 'Нет активных игроков. Добавьте их во вкладке «4. Базы и настройки».',
+    filterEmpty: 'Игроков этого класса нет.',
     dropsH2: 'Что выпало', itemPh: 'Название предмета', pcsShort: 'шт.', add: 'Добавить',
     quickHint: 'Предмета нет в каталоге — создайте его:', qiNamePh: 'Название',
     fitsLabel: 'Кому подходит (пусто = всем):', createAdd: 'Создать и добавить',
@@ -668,8 +672,10 @@ const I18N = {
     eventH2: 'Event', eventPh: 'Event type (e.g., Monster Invasion)',
     modeLabel: 'Contribution mode:', modeSimple: 'Simple (TOP)', modeAdvanced: 'Advanced (numbers)',
     presenceH2: 'Attendance & contribution', allPresent: 'All present', nonePresent: 'Clear all',
+    classFilterLabel: 'Class:', filterAll: 'All',
     present: 'Present', topFlag: 'TOP',
     noPlayers: 'No active players. Add them on the "4. Data & Settings" tab.',
+    filterEmpty: 'No players of this class.',
     dropsH2: 'Drops', itemPh: 'Item name', pcsShort: 'pcs', add: 'Add',
     quickHint: 'Item is not in the catalog — create it:', qiNamePh: 'Name',
     fitsLabel: 'Fits classes (empty = all):', createAdd: 'Create & add',
@@ -795,7 +801,22 @@ function save() {
 
 /* ===== Стан ===== */
 let db = null;
-const ui = { activeTab: 1 };
+const ui = { activeTab: 1, classFilter: '' };   // classFilter: '' = всі класи
+
+/* Спільний фільтр за класами для вкладок 1, 2 і 4 (v1.7) */
+function classFilterMatch(p) { return !ui.classFilter || p.classId === ui.classFilter; }
+function classFilterBar() {
+  const btn = (val, label) => '<button type="button" class="btn btn-sm classFilterBtn' +
+    (ui.classFilter === val ? ' active' : '') + '" data-cls="' + val + '">' +
+    escapeHtml(label) + '</button>';
+  return '<div class="row" style="margin:6px 0 8px"><span class="muted small">' +
+    t('classFilterLabel') + '</span>' + btn('', t('filterAll')) +
+    db.classes.filter(c => !c.isArchived).map(c => btn(c.id, c.name)).join('') + '</div>';
+}
+function wireClassFilter(container, rerender) {
+  container.querySelectorAll('.classFilterBtn').forEach(b =>
+    b.addEventListener('click', () => { ui.classFilter = b.dataset.cls; rerender(); }));
+}
 
 function activeAlliance() { return db.alliances.find(a => a.id === db.activeAllianceId); }
 function pa() { return db.perAlliance[db.activeAllianceId]; }
@@ -840,9 +861,12 @@ function renderAll() { renderHeader(); renderActiveTab(); }
 function renderTab1() {
   const d = draft();
   const players = pa().players.filter(p => p.isActive);
+  const visible = players.filter(classFilterMatch);
   const rosterHtml = players.length === 0
     ? '<p class="muted">' + t('noPlayers') + '</p>'
-    : players.map(p => {
+    : visible.length === 0
+    ? '<p class="muted">' + t('filterEmpty') + '</p>'
+    : visible.map(p => {
         const pr = d.presence[p.id] || {};
         const present = !!pr.present;
         const dis = present ? '' : ' disabled';
@@ -883,6 +907,7 @@ function renderTab1() {
       '<div class="row"><h2 class="grow">' + t('presenceH2') + '</h2>' +
         '<button class="btn btn-sm" id="btnAllPresent">' + t('allPresent') + '</button>' +
         '<button class="btn btn-sm" id="btnNonePresent">' + t('nonePresent') + '</button></div>' +
+      classFilterBar() +
       rosterHtml +
     '</div>';
 
@@ -892,14 +917,16 @@ function renderTab1() {
   });
   tab.querySelectorAll('input[name="mode"]').forEach(r =>
     r.addEventListener('change', e => { draft().mode = e.target.value; save(); renderTab1(); }));
+  // масові кнопки діють лише на відфільтрованих (видимих) гравців
   tab.querySelector('#btnAllPresent')?.addEventListener('click', () => {
-    for (const p of players) presenceOf(p.id).present = true;
+    for (const p of visible) presenceOf(p.id).present = true;
     save(); renderTab1();
   });
   tab.querySelector('#btnNonePresent')?.addEventListener('click', () => {
-    for (const p of players) presenceOf(p.id).present = false;
+    for (const p of visible) presenceOf(p.id).present = false;
     save(); renderTab1();
   });
+  wireClassFilter(tab, renderTab1);
   tab.querySelectorAll('.chkPresent').forEach(c =>
     c.addEventListener('change', e => {
       presenceOf(e.target.dataset.pid).present = e.target.checked;
@@ -1005,16 +1032,19 @@ function renderTab2() {
 
   const dropItems = d.drops.map(dr => itemsById[dr.itemId]).filter(Boolean);
   // ТЗ §4.3 (v1.3): заявки доступні всім активним; галочка сама позначає присутність
-  const claimants = pa().players.filter(p => p.isActive);
+  const allClaimants = pa().players.filter(p => p.isActive);
+  const claimants = allClaimants.filter(classFilterMatch);   // v1.7: фільтр за класом
   let claimsHtml;
-  if (claimants.length === 0) {
+  if (allClaimants.length === 0) {
     claimsHtml = '<p class="muted">' + t('noPlayers') + '</p>';
   } else if (dropItems.length === 0) {
     claimsHtml = '<p class="muted">' + t('addLootFirst') + '</p>';
+  } else if (claimants.length === 0) {
+    claimsHtml = classFilterBar() + '<p class="muted">' + t('filterEmpty') + '</p>';
   } else {
     const chk = (pid, iid) => '<input type="checkbox" class="chkClaim" data-pid="' + pid +
       '" data-iid="' + iid + '"' + (claimsOf(pid).includes(iid) ? ' checked' : '') + '>';
-    claimsHtml =
+    claimsHtml = classFilterBar() +
       '<div class="claims-table table-wrap"><table><thead><tr><th>' + t('playerTh') + '</th>' +
       dropItems.map(it => '<th>' + itemIcon(it) + escapeHtml(itemDisplayName(it)) + '</th>').join('') +
       '</tr></thead><tbody>' +
@@ -1121,6 +1151,7 @@ function renderTab2() {
       }
       invalidateCalc(); save(); renderTab2();
     }));
+  wireClassFilter(tab, renderTab2);
   tab.querySelectorAll('.chkClaim').forEach(c =>
     c.addEventListener('change', e => {
       const { pid, iid } = e.target.dataset;
@@ -1315,11 +1346,12 @@ function renderTab4() {
   /* — Гравці — */
   const roleOpts = sel => ROLES.map(r => '<option value="' + r + '"' +
     (r === sel ? ' selected' : '') + '>' + roleLabel(r) + '</option>').join('');
-  const playersHtml =
+  const playersHtml = classFilterBar() +
     '<div class="table-wrap"><table><thead><tr><th>' + t('thNick') + '</th><th>' + t('thClass') +
       '</th><th>' + t('thLevel') + '</th><th>' + t('thStatus') + '</th><th>' + t('thActive') +
       '</th><th></th></tr></thead><tbody>' +
-    paData.players.map(p => '<tr' + (p.isActive ? '' : ' class="cancelled"') + '>' +
+    paData.players.filter(classFilterMatch).map(p =>
+      '<tr' + (p.isActive ? '' : ' class="cancelled"') + '>' +
       '<td><input type="text" class="inpNick" data-pid="' + p.id + '" value="' +
         escapeHtml(p.nickname) + '" maxlength="30" style="width:130px"></td>' +
       '<td><select class="selClass" data-pid="' + p.id + '">' + clsOptions(p.classId) + '</select></td>' +
@@ -1489,6 +1521,7 @@ function wireTab4() {
       if (dEl.open) ui.tab4open.add(dEl.dataset.sect);
       else ui.tab4open.delete(dEl.dataset.sect);
     }));
+  wireClassFilter(tab, renderTab4);
 
   /* Альянси */
   tab.querySelector('#btnAddAlliance').addEventListener('click', () => {
@@ -1568,7 +1601,13 @@ function wireTab4() {
   });
   tab.querySelectorAll('.chkActive').forEach(c =>
     c.addEventListener('change', e => {
-      pa().players.find(x => x.id === e.target.dataset.pid).isActive = e.target.checked;
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      p.isActive = e.target.checked;
+      const d = pa().draftSession;
+      if (!p.isActive && d) {   // гігієна чернетки: вибулий втрачає присутність і заявки
+        delete d.presence[p.id];
+        delete d.claims[p.id];
+      }
       mutated(); renderTab4();
     }));
   tab.querySelectorAll('.btnDelPlayer').forEach(b =>

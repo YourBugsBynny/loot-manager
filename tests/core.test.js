@@ -501,6 +501,30 @@ test('applyRoster: Жрец отримує хільські ваги', () => {
   const zh = classes.find(c => c.name === 'Жрец');
   assert.deepStrictEqual([zh.wDmg, zh.wTaken, zh.wHeal], [0.1, 0.1, 0.8]);
 });
+// ---- v1.7: захист від застарілих позначок ----
+test('computeScores: деактивований гравець із застарілою присутністю не рахується', () => {
+  const players = { 'p-a': { ...P.a }, 'p-b': { ...P.b, isActive: false } };
+  const session = { mode: 'simple', presence: {
+    'p-a': { present: true, top: false },
+    'p-b': { present: true, top: true }   // стара позначка, гравець уже вибув
+  }, drops: [], claims: {} };
+  assert.deepStrictEqual(LMCore.computeScores(session, players, CLSBYID, S),
+    { 'p-a': 50 });
+});
+test('distribute: вибулий претендент не бере участі', () => {
+  const players = { 'p-a': { ...P.a }, 'p-b': { ...P.b, isActive: false } };
+  const session = { mode: 'simple', eventTypeName: 'Бос',
+    presence: { 'p-a': { present: true, top: false },
+                'p-b': { present: true, top: true } },
+    drops: [{ itemId: 'i-box', quantity: 1 }],
+    claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } };
+  const { positions } = LMCore.distribute({ session, playersById: players,
+    classesById: CLSBYID, itemsById: ITBYID, history: [], settings: S,
+    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
+  assert.strictEqual(positions[0].winnerId, 'p-a');
+  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-a']);
+});
+
 test('emptyDb v1.5: сід — п\'ять реальних класів гри', () => {
   const db = LMCore.emptyDb(NOW);
   assert.deepStrictEqual(db.classes.map(c => c.name),
