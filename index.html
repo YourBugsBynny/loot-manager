@@ -137,7 +137,7 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .roster-cell > label.inline { flex: 1 1 auto; min-width: 0; }   /* нік стискається… */
 .roster-cell .nick { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
-.roster-cell.absent .nick { color: var(--muted); font-weight: 400; }
+.roster-cell.absent .nick, .roster-cell.dim .nick { color: var(--muted); font-weight: 400; }
 .roster-cell .lvl, .roster-cell > label.inline.small, .roster-cell .metrics {
   flex: 0 0 auto;                                               /* …решта не переноситься */
 }
@@ -151,12 +151,24 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .pos-row .pos-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cancelled { text-decoration: line-through; opacity: .55; }
 
-.claims-cards { display: none; }
-@media (max-width: 699px) {
-  .claims-table { display: none; }
-  .claims-cards { display: block; }
-  header.appbar .brand { display: none; }
-}
+@media (max-width: 699px) { header.appbar .brand { display: none; } }
+
+/* Смужка предметів дропу для заявок (v2.0) */
+.item-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.item-tab { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  padding: 5px 10px; font-size: 0.9rem; max-width: 100%; }
+.item-tab:hover { border-color: var(--accent); }
+.item-tab.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.item-tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 15ch; }
+.item-tab .qty { color: var(--muted); font-variant-numeric: tabular-nums; }
+.item-tab .cnt { min-width: 20px; text-align: center; border-radius: 999px;
+  background: var(--line); color: var(--muted); font-size: 0.78rem; padding: 1px 6px;
+  font-variant-numeric: tabular-nums; }
+.item-tab .cnt.has { background: var(--accent); color: var(--accent-ink); }
+.claims-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 2px; }
+.claims-head .who { font-weight: 600; }
 details.sect { border: 1px solid var(--line); border-radius: 12px; background: var(--card);
   margin-bottom: 10px; }
 details.sect > summary { cursor: pointer; padding: 11px 13px; font-weight: 600; }
@@ -624,6 +636,8 @@ const I18N = {
     fitsLabel: 'Кому подходит (пусто = всем):', createAdd: 'Создать и добавить',
     nothingAdded: 'Пока ничего не добавлено.', claimsH2: 'Заявки (кто что хочет)',
     quickPick: 'Быстрый выбор:', moreItems: n => '+ ещё ' + n + ' — уточните поиск',
+    whoWants: n => 'Кто хочет: ' + n, claimAll: 'Отметить всех', claimNone: 'Снять всех',
+    claimsTotal: n => 'заявок: ' + n, pickItemHint: 'Выберите предмет выше.',
     claimAutoPresent: 'Отметка «хочет» автоматически помечает игрока присутствующим (вклад — во вкладке 1).',
     addLootFirst: 'Добавьте добычу выше, чтобы проставить заявки.', playerTh: 'Игрок',
     enterItemName: 'Введите название предмета.', itemExists: 'Предмет с таким названием уже существует.',
@@ -712,6 +726,8 @@ const I18N = {
     fitsLabel: 'Fits classes (empty = all):', createAdd: 'Create & add',
     nothingAdded: 'Nothing added yet.', claimsH2: 'Claims (who wants what)',
     quickPick: 'Quick pick:', moreItems: n => '+ ' + n + ' more — refine the search',
+    whoWants: n => 'Who wants: ' + n, claimAll: 'Mark all', claimNone: 'Clear all',
+    claimsTotal: n => 'claims: ' + n, pickItemHint: 'Pick an item above.',
     claimAutoPresent: 'Checking a claim automatically marks the player as present (contribution is on tab 1).',
     addLootFirst: 'Add loot above to set claims.', playerTh: 'Player',
     enterItemName: 'Enter an item name.', itemExists: 'An item with this name already exists.',
@@ -834,7 +850,7 @@ function save() {
 
 /* ===== Стан ===== */
 let db = null;
-const ui = { activeTab: 1, classFilter: '' };   // classFilter: '' = всі класи
+const ui = { activeTab: 1, classFilter: '', claimItemId: '' };   // classFilter: '' = всі класи
 
 /* Спільний фільтр за класами для вкладок 1, 2 і 4 (v1.7) */
 function classFilterMatch(p) { return !ui.classFilter || p.classId === ui.classFilter; }
@@ -1103,22 +1119,56 @@ function renderTab2() {
   } else if (claimants.length === 0) {
     claimsHtml = classFilterBar() + '<p class="muted">' + t('filterEmpty') + '</p>';
   } else {
-    const chk = (pid, iid) => '<input type="checkbox" class="chkClaim" data-pid="' + pid +
-      '" data-iid="' + iid + '"' + (claimsOf(pid).includes(iid) ? ' checked' : '') + '>';
-    claimsHtml = classFilterBar() +
-      '<div class="claims-table table-wrap"><table><thead><tr><th>' + t('playerTh') + '</th>' +
-      dropItems.map(it => '<th>' + itemIcon(it) + escapeHtml(itemDisplayName(it)) + '</th>').join('') +
-      '</tr></thead><tbody>' +
-      claimants.map(p => '<tr><td><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
-        escapeHtml(className(p.classId)) + '</span></td>' +
-        dropItems.map(it => '<td>' + chk(p.id, it.id) + '</td>').join('') + '</tr>').join('') +
-      '</tbody></table></div>' +
-      '<div class="claims-cards">' +
-      claimants.map(p => '<div class="card"><b>' + escapeHtml(p.nickname) + '</b> <span class="muted small">' +
-        escapeHtml(className(p.classId)) + '</span><div class="row" style="margin-top:6px">' +
-        dropItems.map(it => '<label class="inline small">' + chk(p.id, it.id) + ' ' +
-          itemIcon(it) + escapeHtml(itemDisplayName(it)) + '</label>').join('') + '</div></div>').join('') +
+    // v2.0: заявки предметно-орієнтовані — предмет обирається зверху,
+    // під ним лише той список гравців, який реально треба відмітити
+    if (!dropItems.some(i => i.id === ui.claimItemId)) ui.claimItemId = dropItems[0].id;
+    const activeItem = itemsById[ui.claimItemId];
+    const wants = (pid, iid) => Array.isArray(d.claims[pid]) && d.claims[pid].includes(iid);
+    const countFor = iid => allClaimants.filter(p => wants(p.id, iid)).length;
+
+    const tabs = dropItems.map(it => {
+      const dr = d.drops.find(x => x.itemId === it.id);
+      const n = countFor(it.id);
+      return '<button type="button" class="item-tab' +
+        (it.id === ui.claimItemId ? ' active' : '') + '" data-iid="' + it.id + '">' +
+        (it.icon ? itemIcon(it) : '<span class="dot ' + it.rarity + '"></span>') +
+        '<span class="nm">' + escapeHtml(itemDisplayName(it)) + '</span>' +
+        (dr && dr.quantity > 1 ? '<span class="qty">×' + dr.quantity + '</span>' : '') +
+        '<span class="cnt' + (n ? ' has' : '') + '">' + n + '</span></button>';
+    }).join('');
+
+    const groups = new Map();
+    for (const p of claimants) {
+      if (!groups.has(p.classId)) groups.set(p.classId, []);
+      groups.get(p.classId).push(p);
+    }
+    const order = db.classes.map(c => c.id).filter(id => groups.has(id));
+    for (const id of groups.keys()) if (!order.includes(id)) order.push(id);
+    const grid = '<div class="roster-grid">' + order.map(cid => {
+      const list = groups.get(cid);
+      const here = list.filter(p => wants(p.id, ui.claimItemId)).length;
+      return '<div class="roster-class-head">' + escapeHtml(className(cid)) +
+        '<span class="muted small">' + here + '/' + list.length + '</span></div>' +
+        list.map(p => {
+          const on = wants(p.id, ui.claimItemId);
+          return '<div class="roster-cell' + (on ? '' : ' dim') + '">' +
+            '<label class="inline"><input type="checkbox" class="chkClaim" data-pid="' + p.id +
+            '" data-iid="' + ui.claimItemId + '"' + (on ? ' checked' : '') + '>' +
+            '<span class="nick">' + escapeHtml(p.nickname) + '</span></label>' +
+            (p.level ? '<span class="muted small lvl">' + p.level + '</span>' : '') + '</div>';
+        }).join('');
+    }).join('') + '</div>';
+
+    claimsHtml =
+      '<div class="item-tabs">' + tabs + '</div>' +
+      '<div class="claims-head">' +
+        '<span class="who">' + escapeHtml(t('whoWants', itemDisplayName(activeItem))) + '</span>' +
+        '<span class="muted small">' + t('claimsTotal', countFor(ui.claimItemId)) + '</span>' +
+        '<span class="grow"></span>' +
+        '<button class="btn btn-sm" id="btnClaimAll">' + t('claimAll') + '</button>' +
+        '<button class="btn btn-sm" id="btnClaimNone">' + t('claimNone') + '</button>' +
       '</div>' +
+      classFilterBar() + grid +
       '<p class="muted small" style="margin-top:6px">' + t('claimAutoPresent') + '</p>';
   }
 
@@ -1213,17 +1263,37 @@ function renderTab2() {
       invalidateCalc(); save(); renderTab2();
     }));
   wireClassFilter(tab, renderTab2);
+  tab.querySelector('.item-tabs')?.addEventListener('click', e => {
+    const btn = e.target.closest('.item-tab');
+    if (!btn) return;
+    ui.claimItemId = btn.dataset.iid;
+    renderTab2();
+  });
   tab.querySelectorAll('.chkClaim').forEach(c =>
     c.addEventListener('change', e => {
       const { pid, iid } = e.target.dataset;
-      const list = claimsOf(pid);
-      if (e.target.checked) {
-        if (!list.includes(iid)) list.push(iid);
-        presenceOf(pid).present = true;   // заявка ⇒ присутність (ТЗ §4.3, v1.3)
-      }
-      else { const idx = list.indexOf(iid); if (idx >= 0) list.splice(idx, 1); }
-      invalidateCalc(); save();
+      setClaim(pid, iid, e.target.checked);
+      invalidateCalc(); save(); renderTab2();
     }));
+  // масові кнопки діють на відфільтрованих гравців і поточний предмет
+  const bulkClaim = on => {
+    for (const p of pa().players.filter(p => p.isActive).filter(classFilterMatch)) {
+      setClaim(p.id, ui.claimItemId, on);
+    }
+    invalidateCalc(); save(); renderTab2();
+  };
+  tab.querySelector('#btnClaimAll')?.addEventListener('click', () => bulkClaim(true));
+  tab.querySelector('#btnClaimNone')?.addEventListener('click', () => bulkClaim(false));
+}
+function setClaim(pid, itemId, on) {
+  const list = claimsOf(pid);
+  const idx = list.indexOf(itemId);
+  if (on) {
+    if (idx < 0) list.push(itemId);
+    presenceOf(pid).present = true;   // заявка ⇒ присутність (ТЗ §4.3, v1.3)
+  } else if (idx >= 0) {
+    list.splice(idx, 1);
+  }
 }
 function addDrop(itemId, qty) {
   const d = draft();
