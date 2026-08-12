@@ -93,20 +93,14 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .badge.info { background: var(--accent); }
 .badge.plain { background: var(--muted); }
 
-.chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid var(--line); border-radius: 999px;
-  padding: 4px 12px; cursor: pointer; background: var(--card); font-size: 0.88rem;
-}
-.chip:hover { border-color: var(--accent); }
-.chip .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-.chip .dot.common { background: var(--r-common); }
-.chip .dot.rare { background: var(--r-rare); }
-.chip .dot.epic { background: var(--r-epic); }
-.chip .dot.legendary { background: var(--r-legendary); }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.dot.common { background: var(--r-common); }
+.dot.rare { background: var(--r-rare); }
+.dot.epic { background: var(--r-epic); }
+.dot.legendary { background: var(--r-legendary); }
 .item-ico { width: 22px; height: 22px; object-fit: contain; vertical-align: -5px;
   border-radius: 4px; margin-right: 4px; }
-.chip .item-ico { margin-right: 0; }
+.tile-label .item-ico { margin-right: 0; }
 
 .tile-grid { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
   margin-top: 6px; }
