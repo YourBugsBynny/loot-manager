@@ -146,6 +146,9 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 }
 .roster-cell .lvl { font-variant-numeric: tabular-nums; }
 
+.stage-head { font-size: 0.95rem; margin: 14px 0 6px; color: var(--muted);
+  border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.stage-head:first-child { margin-top: 0; }
 .pos-row { padding: 9px 4px; border-bottom: 1px solid var(--line); }
 .pos-row:last-child { border-bottom: 0; }
 .pos-row .pos-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -1398,7 +1401,7 @@ function renderTab3() {
     const { positions, scores } = ui.calcResult;
     const topSet = LMCore.topContributors(d, scores);
     const fmt = n => (Math.round(n * 10) / 10).toString();
-    const rows = positions.map(pos => {
+    const rowHtml = pos => {
       const item = itemsById[pos.itemId];
       const winner = pos.winnerId ? playersById[pos.winnerId] : null;
       const badges =
@@ -1428,10 +1431,21 @@ function renderTab3() {
           (candOpts ? '<optgroup label="' + t('claimantsGrp') + '">' + candOpts + '</optgroup>' : '') +
           (otherOpts ? '<optgroup label="' + t('otherGrp') + '">' + otherOpts + '</optgroup>' : '') +
         '</select></div></div>';
+    };
+    // v3.0.0: позиції згруповані у два етапи в порядку, заданому на вкладці 1
+    const first = d.firstGroup === 'B' ? 'B' : 'A';
+    const groupLabel = g => (g === 'A' ? t('groupA') : t('groupB'));
+    const rows = [1, 2].map(stage => {
+      const list = positions.filter(p => (p.stage === 1 ? 1 : 2) === stage);
+      if (list.length === 0) return '';
+      const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
+      return '<h3 class="stage-head">' + t('stageHead', stage) + ' — ' +
+        escapeHtml(groupLabel(g)) + '</h3>' + list.map(rowHtml).join('');
     }).join('');
     const reportText = LMCore.formatReport({
       allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || t('defaultEvent'),
-      positions, itemsById, playersById, classesById: byId(db.classes), topSet, lang: lang() });
+      positions, itemsById, playersById, classesById: byId(db.classes), topSet,
+      lang: lang(), firstGroup: d.firstGroup });
     resultHtml =
       '<div class="card"><h2>' + t('resultH2') + '</h2>' + rows + '</div>' +
       '<div class="card"><h2>' + t('chatTextH2') + '</h2>' +
