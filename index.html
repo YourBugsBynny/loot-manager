@@ -525,8 +525,15 @@ const LMCore = (() => {
 
   // Upsert гравців за ніком (без регістру) і класів за назвою; нічого не видаляє,
   // роль та isActive наявних гравців не чіпає.
-  function applyRoster(players, classes, groups, nowISO) {
-    let addedPlayers = 0, updatedPlayers = 0, addedClasses = 0;
+  // opts.replaceRoster (v3.2.0): список із гри — джерело правди. Хто в ньому є —
+  // активний, кого немає — вибув (isActive = false). Гравці не видаляються: на них
+  // посилається історія, а роль офіцер проставляв руками.
+  function applyRoster(players, classes, groups, nowISO, opts) {
+    let addedPlayers = 0, updatedPlayers = 0, addedClasses = 0, deactivated = 0;
+    const inList = new Set();
+    for (const g of groups) {
+      for (const rp of g.players) inList.add(rp.nickname.trim().toLowerCase());
+    }
     for (const g of groups) {
       let cls = classes.find(c => c.name.toLowerCase() === g.className.toLowerCase());
       if (!cls) {
@@ -540,6 +547,7 @@ const LMCore = (() => {
           p.nickname.toLowerCase() === rp.nickname.toLowerCase());
         if (existing) {
           existing.classId = cls.id; existing.level = rp.level; updatedPlayers++;
+          if (opts && opts.replaceRoster) existing.isActive = true;   // повернувся у склад
         } else {
           players.push({ id: uuid(), nickname: rp.nickname, classId: cls.id,
             role: 'Учасник', isActive: true, level: rp.level, createdAt: nowISO });
@@ -547,7 +555,14 @@ const LMCore = (() => {
         }
       }
     }
-    return { addedPlayers, updatedPlayers, addedClasses };
+    if (opts && opts.replaceRoster) {
+      for (const p of players) {
+        if (p.isActive !== false && !inList.has(p.nickname.trim().toLowerCase())) {
+          p.isActive = false; deactivated++;
+        }
+      }
+    }
+    return { addedPlayers, updatedPlayers, addedClasses, deactivated };
   }
 
   // v1.4: інтеграція з каталогом предметів (data/loot.json інструмента вилучення зображень)
@@ -773,8 +788,14 @@ const I18N = {
     thLevel: 'Ур.',
     importRosterBtn: '📋 Импортировать состав из текста',
     rosterPh: 'Вставьте список из игры: заголовок класса («Маг», «🔨 Воин»…), ' +
-      'затем строки вида «1. Ник — Ур. 64». Существующие игроки обновятся, никто не удалится.',
-    rosterDone: (p, u, c) => 'Состав: +' + p + ' игроков, ' + u + ' обновлено, +' + c + ' классов ✓',
+      'затем строки вида «1. Ник — Ур. 64». Список полностью заменяет состав: ' +
+      'кого в нём нет — выбывает, кто вернулся — снова активен. Никто не удаляется, ' +
+      'история сохраняется.',
+    rosterReplaceConfirm: (n, names) => 'Список заменит состав. Выбывают из альянса (' + n +
+      '): ' + names + '.\n\nИгроки не удаляются — их можно вернуть галочкой «Активен» ' +
+      'или следующим импортом. Продолжить?',
+    rosterDone: (p, u, c, d) => 'Состав: +' + p + ' игроков, ' + u + ' обновлено, +' + c +
+      ' классов, ' + d + ' выбыло ✓',
     rosterFail: e => 'Импорт состава отклонён: ' + e,
     nickPh: 'Никнейм', addPlayer: 'Добавить игрока', enterNick: 'Введите никнейм.',
     nickExists: 'Игрок с таким ником уже есть в этом альянсе.',
@@ -866,8 +887,14 @@ const I18N = {
     thLevel: 'Lvl',
     importRosterBtn: '📋 Import roster from text',
     rosterPh: 'Paste the in-game list: a class header ("Маг", "🔨 Воин"…), ' +
-      'then lines like "1. Nick — Ур. 64". Existing players are updated, nobody is deleted.',
-    rosterDone: (p, u, c) => 'Roster: +' + p + ' players, ' + u + ' updated, +' + c + ' classes ✓',
+      'then lines like "1. Nick — Ур. 64". The list fully replaces the roster: anyone ' +
+      'missing from it leaves, anyone back in it becomes active again. Nobody is deleted, ' +
+      'history is kept.',
+    rosterReplaceConfirm: (n, names) => 'The list will replace the roster. Leaving (' + n +
+      '): ' + names + '.\n\nPlayers are not deleted — bring them back with the "Active" ' +
+      'checkbox or the next import. Continue?',
+    rosterDone: (p, u, c, d) => 'Roster: +' + p + ' players, ' + u + ' updated, +' + c +
+      ' classes, ' + d + ' left ✓',
     rosterFail: e => 'Roster import rejected: ' + e,
     nickPh: 'Nickname', addPlayer: 'Add player', enterNick: 'Enter a nickname.',
     nickExists: 'A player with this nickname already exists in this alliance.',
@@ -1866,9 +1893,30 @@ function wireTab4() {
   tab.querySelector('#btnImportRoster').addEventListener('click', () => {
     const parsed = LMCore.parseRoster(tab.querySelector('#rosterText').value);
     if (!parsed.ok) { banner(t('rosterFail', parsed.error)); return; }
-    const res = LMCore.applyRoster(pa().players, db.classes, parsed.groups, nowISO());
+    // v3.2.0: список із гри повністю замінює склад. Питаємо підтвердження, бо це
+    // масова зміна: показуємо, скільки і кого саме буде виведено зі складу.
+    const inList = new Set();
+    for (const g of parsed.groups) {
+      for (const rp of g.players) inList.add(rp.nickname.trim().toLowerCase());
+    }
+    const leaving = pa().players.filter(p =>
+      p.isActive !== false && !inList.has(p.nickname.trim().toLowerCase()));
+    if (leaving.length > 0) {
+      const names = leaving.slice(0, 10).map(p => p.nickname).join(', ') +
+        (leaving.length > 10 ? ', …' : '');
+      if (!confirm(t('rosterReplaceConfirm', leaving.length, names))) return;
+    }
+    const res = LMCore.applyRoster(pa().players, db.classes, parsed.groups, nowISO(),
+      { replaceRoster: true });
+    const d = pa().draftSession;      // гігієна чернетки: вибулий втрачає ТОП і заявки
+    if (d) {
+      for (const p of pa().players) {
+        if (p.isActive === false) { delete d.presence[p.id]; delete d.claims[p.id]; }
+      }
+    }
     mutated(); renderTab4();
-    banner(t('rosterDone', res.addedPlayers, res.updatedPlayers, res.addedClasses));
+    banner(t('rosterDone', res.addedPlayers, res.updatedPlayers, res.addedClasses,
+      res.deactivated));
   });
   tab.querySelectorAll('.chkActive').forEach(c =>
     c.addEventListener('change', e => {
