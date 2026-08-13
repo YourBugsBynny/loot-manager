@@ -36,7 +36,7 @@ test('uuid: формат v4 і унікальність', () => {
 const NOW = '2026-08-11T12:00:00.000Z';
 test('emptyDb: перший запуск за ТЗ §7.1', () => {
   const db = LMCore.emptyDb(NOW);
-  assert.strictEqual(db.schemaVersion, 1);
+  assert.strictEqual(db.schemaVersion, 2);
   assert.strictEqual(db.alliances.length, 1);
   assert.strictEqual(db.alliances[0].name, 'Мой альянс');
   assert.strictEqual(db.activeAllianceId, db.alliances[0].id);
@@ -46,6 +46,9 @@ test('emptyDb: перший запуск за ТЗ §7.1', () => {
   const mag = db.classes[0];
   assert.deepStrictEqual(
     [mag.wDmg, mag.wTaken, mag.wHeal, mag.isArchived], [0.8, 0.1, 0.1, false]);
+  assert.strictEqual(mag.group, 'B');
+  assert.strictEqual(db.classes[1].group, 'A');   // Воин
+  assert.strictEqual(db.classes[2].group, 'A');   // Жрец
   const pa = db.perAlliance[db.activeAllianceId];
   assert.deepStrictEqual(
     { p: pa.players, h: pa.history, e: pa.eventTypes, d: pa.draftSession },
@@ -55,12 +58,48 @@ test('emptyDb: перший запуск за ТЗ §7.1', () => {
   assert.notStrictEqual(db.settings, LMCore.DEFAULTS); // копія, не посилання
   assert.ok(!Object.isFrozen(db.settings.rarityWeights));
 });
-test('migrate: v1 проходить, чужа версія — ні', () => {
-  const db = LMCore.emptyDb(NOW);
-  assert.strictEqual(LMCore.migrate(db).ok, true);
-  const bad = LMCore.migrate({ ...db, schemaVersion: 2 });
+test('migrate: база v1 піднімається до v2 — групи класів, чиста чернетка', () => {
+  const old = LMCore.emptyDb(NOW);
+  old.schemaVersion = 1;
+  for (const c of old.classes) delete c.group;
+  const aid = old.activeAllianceId;
+  old.perAlliance[aid].draftSession = {
+    eventTypeName: 'Вторжение', mode: 'advanced',
+    presence: { 'p-x': { present: true, top: true, damage: 500, taken: 0, heal: 0 },
+                'p-y': { present: false, top: false, damage: 0, taken: 0, heal: 0 } },
+    drops: [{ itemId: 'i-box', quantity: 1 }], claims: {}, overrides: {}, rollMemo: {} };
+  old.perAlliance[aid].history.push({ id: 'r1', timestamp: NOW, eventTypeName: 'Старий',
+    itemId: 'i-box', itemNameSnapshot: 'Скриня', playerId: 'p-x',
+    playerNicknameSnapshot: 'X', quantity: 1, scoreAtDistribution: 50,
+    rolled: false, manual: false, cancelled: false });
+
+  const res = LMCore.migrate(old);
+  assert.strictEqual(res.ok, true);
+  assert.strictEqual(res.db.schemaVersion, 2);
+  assert.deepStrictEqual(res.db.classes.map(c => c.name + ':' + c.group),
+    ['Маг:B', 'Воин:A', 'Жрец:A', 'Разбойник:B', 'Лучник:B']);
+  const d = res.db.perAlliance[aid].draftSession;
+  assert.strictEqual(d.mode, undefined);
+  assert.deepStrictEqual(d.presence, { 'p-x': { top: true }, 'p-y': { top: false } });
+  assert.ok(d.firstGroup === 'A' || d.firstGroup === 'B');
+  assert.deepStrictEqual(d.drops, [{ itemId: 'i-box', quantity: 1 }]);
+  assert.strictEqual(res.db.perAlliance[aid].history.length, 1,
+    'історія — снапшоти минулих івентів, міграція їх не чіпає');
+  assert.strictEqual(res.db.perAlliance[aid].history[0].scoreAtDistribution, 50);
+});
+test('migrate: база v2 проходить без змін, чужа версія — ні', () => {
+  const fresh = LMCore.emptyDb(NOW);
+  assert.strictEqual(fresh.schemaVersion, 2);
+  assert.strictEqual(LMCore.migrate(fresh).ok, true);
+  const bad = LMCore.migrate({ ...fresh, schemaVersion: 99 });
   assert.strictEqual(bad.ok, false);
   assert.match(bad.error, /версі/i);
+});
+test('migrate: стара мова uk падає на ru (обидві версії схеми)', () => {
+  const v1 = LMCore.emptyDb(NOW); v1.schemaVersion = 1; v1.settings.language = 'uk';
+  assert.strictEqual(LMCore.migrate(v1).db.settings.language, 'ru');
+  const v2 = LMCore.emptyDb(NOW); v2.settings.language = 'uk';
+  assert.strictEqual(LMCore.migrate(v2).db.settings.language, 'ru');
 });
 test('validateImport: відхиляє сміття, приймає валідну базу', () => {
   assert.strictEqual(LMCore.validateImport(null).ok, false);

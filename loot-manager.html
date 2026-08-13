@@ -270,7 +270,7 @@ const LMCore = (() => {
   function emptyDb(nowISO) {
     const alliance = { id: uuid(), name: 'Мой альянс', createdAt: nowISO };
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       activeAllianceId: alliance.id,
       settings: defaultSettings(),
       classes: CLASS_SEED.map(([name, wDmg, wTaken, wHeal]) =>
@@ -283,11 +283,27 @@ const LMCore = (() => {
   }
 
   function migrate(db) {
+    // v1.2: мова лише ru|en; відсутня чи невідома (зокрема стара uk) → ru
+    if (db.settings && !LANGS.includes(db.settings.language)) db.settings.language = 'ru';
     if (db.schemaVersion === 1) {
-      // v1.2: мова лише ru|en; відсутня чи невідома (зокрема стара uk) → ru
-      if (db.settings && !LANGS.includes(db.settings.language)) db.settings.language = 'ru';
+      // v3.0.0: класи дістають групу розподілу за назвою
+      for (const c of db.classes || []) {
+        if (c.group !== 'A' && c.group !== 'B') c.group = groupForClassName(c.name);
+      }
+      // чернетка сеансу: присутності й метрик розширеного режиму більше не існує
+      for (const paData of Object.values(db.perAlliance || {})) {
+        const d = paData.draftSession;
+        if (!d) continue;
+        delete d.mode;
+        for (const pid of Object.keys(d.presence || {})) {
+          d.presence[pid] = { top: !!d.presence[pid].top };
+        }
+        if (d.firstGroup !== 'A' && d.firstGroup !== 'B') d.firstGroup = 'A';
+      }
+      db.schemaVersion = 2;
       return { ok: true, db };
     }
+    if (db.schemaVersion === 2) return { ok: true, db };
     return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
   }
 
