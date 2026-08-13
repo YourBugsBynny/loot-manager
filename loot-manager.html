@@ -31,6 +31,9 @@ h2:first-child { margin-top: 0; }
   box-shadow: 0 6px 24px rgba(0,0,0,.25);
 }
 #banner button { background: none; border: 0; color: #fff; font-size: 1.1rem; cursor: pointer; }
+/* display:flex вище перебиває [hidden]{display:none} браузера — без цього правила
+   порожня плашка висить на екрані постійно */
+#banner[hidden] { display: none; }
 
 header.appbar {
   position: sticky; top: 0; z-index: 20; background: var(--card);
@@ -166,7 +169,8 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .item-tab .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
   border: 0; background: none; padding: 2px; margin: 0; cursor: pointer;
   color: inherit; font: inherit; }
-.item-tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14ch; }
+/* v3.0.0: назва предмета не обрізається — офіцер мусить бачити, що саме роздає */
+.item-tab .nm { white-space: normal; overflow-wrap: anywhere; max-width: 22ch; text-align: left; }
 .item-tab .inpDropQty { width: 52px; padding: 3px 6px; }
 .item-tab .cnt { min-width: 20px; text-align: center; border-radius: 999px;
   background: var(--line); color: var(--muted); font-size: 0.78rem; padding: 1px 6px;
