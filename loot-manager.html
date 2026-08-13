@@ -255,10 +255,11 @@ details.sect > .sect-body { padding: 0 13px 13px; }
 <script id="core">
 'use strict';
 const LMCore = (() => {
+  // v4.0.0: від десяти констант лишилось дві. Черга замість балів: бали, клас-бонус,
+  // штрафи й ваги рідкості описували те саме «хто давно нічого не брав», але
+  // вимагали десяти чисел і не піддавались поясненню в чаті альянсу.
   const DEFAULTS = Object.freeze({
-    scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
-    historyDays: 14, wWon: 50,
-    rarityWeights: Object.freeze({ common: 1, rare: 2, epic: 4, legendary: 8 }),
+    historyDays: 14, useTop: true,
     webhookUrl: '', language: 'ru'
   });
   const LANGS = Object.freeze(['ru', 'en']);
@@ -270,7 +271,7 @@ const LMCore = (() => {
     });
   }
   function defaultSettings() {
-    return { ...DEFAULTS, rarityWeights: { ...DEFAULTS.rarityWeights } };
+    return { ...DEFAULTS };
   }
 
   // v1.5: реальні класи гри (склад альянсу замовника)
@@ -300,7 +301,7 @@ const LMCore = (() => {
   function emptyDb(nowISO) {
     const alliance = { id: uuid(), name: 'Мой альянс', createdAt: nowISO };
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       activeAllianceId: alliance.id,
       settings: defaultSettings(),
       classes: CLASS_SEED.map(([name, wDmg, wTaken, wHeal]) =>
@@ -331,9 +332,20 @@ const LMCore = (() => {
         if (d.firstGroup !== 'A' && d.firstGroup !== 'B') d.firstGroup = 'A';
       }
       db.schemaVersion = 2;
-      return { ok: true, db };
     }
-    if (db.schemaVersion === 2) return { ok: true, db };
+    if (db.schemaVersion === 2) {
+      // v4.0.0: черга замість балів — старі константи алгоритму більше ні на що
+      // не впливають, лишаємо тільки вікно історії й прапорець ТОП
+      const old = db.settings || {};
+      db.settings = {
+        historyDays: Number(old.historyDays) > 0 ? Number(old.historyDays) : 14,
+        useTop: old.useTop !== false,
+        webhookUrl: old.webhookUrl || '',
+        language: LANGS.includes(old.language) ? old.language : 'ru'
+      };
+      db.schemaVersion = 3;
+    }
+    if (db.schemaVersion === 3) return { ok: true, db };
     return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
   }
 
@@ -368,30 +380,22 @@ const LMCore = (() => {
     return migrate(raw);
   }
 
-  // ТЗ §5.2 (v3.0.0): бал вкладу — кожному активному гравцю складу; ТОП дає більший бал.
-  // Відмітки присутності немає: офіцеру задовго відмічати ~70 нікнеймів щоівенту.
-  function computeScores(session, playersById, settings) {
-    const scores = {};
+  // v4.0.0: балів більше немає — черга будується за кількістю вже отриманого.
+  // Позначка ТОП лишилась як тай-брейк серед рівних (settings.useTop).
+  function isTopFlag(session, settings, pid) {
     const presence = (session && session.presence) || {};
-    for (const pid of Object.keys(playersById)) {
-      if (playersById[pid].isActive === false) continue;   // вибулі не рахуються
-      scores[pid] = (presence[pid] && presence[pid].top)
-        ? settings.scoreTop : settings.scorePresent;
-    }
-    return scores;
+    return settings.useTop !== false && !!(presence[pid] && presence[pid].top);
   }
 
-  // ТЗ §5.4: анти-жадібність — сума ваг рідкості отриманого за вікно historyDays
-  function historyLoad(history, itemsById, playerId, nowISO, settings) {
+  // ТЗ §5.4 (v4.0.0): скільки штук здобичі гравець уже отримав за вікно historyDays.
+  // Рідкість більше не важить: одна річ — одна одиниця черги.
+  function historyLoad(history, playerId, nowISO, settings) {
     const cutoff = Date.parse(nowISO) - settings.historyDays * 86400000;
     let sum = 0;
     for (const r of history) {
       if (r.playerId !== playerId || r.cancelled) continue;
       if (Date.parse(r.timestamp) < cutoff) continue;
-      const item = itemsById[r.itemId];
-      const w = item && settings.rarityWeights[item.rarity] !== undefined
-        ? settings.rarityWeights[item.rarity] : 1;
-      sum += w * (r.quantity || 1);
+      sum += r.quantity || 1;
     }
     return sum;
   }
@@ -401,14 +405,17 @@ const LMCore = (() => {
     const { session, playersById, classesById, itemsById, history, settings,
             nowISO, overrides, rollMemo } = ctx;
     const rng = ctx.rng || Math.random;
-    const scores = computeScores(session, playersById, settings);
-    const loadCache = new Map();
+    const eligibleIds = Object.keys(playersById)
+      .filter(pid => playersById[pid].isActive !== false);   // вибулі не в черзі
+    const histCache = new Map();
+    // місце в черзі = отримане за вікно + уже взяте в цьому івенті (наскрізно між етапами)
     const loadOf = pid => {
-      if (!loadCache.has(pid)) {
-        loadCache.set(pid, historyLoad(history, itemsById, pid, nowISO, settings));
+      if (!histCache.has(pid)) {
+        histCache.set(pid, historyLoad(history, pid, nowISO, settings));
       }
-      return loadCache.get(pid);
+      return histCache.get(pid) + (wonCount[pid] || 0);
     };
+    const topOf = pid => isTopFlag(session, settings, pid);
     const drops = (session.drops || [])
       .map((d, idx) => ({ ...d, idx,
         rank: (itemsById[d.itemId] && RARITY_RANK[itemsById[d.itemId].rarity]) || 0 }))
@@ -422,14 +429,12 @@ const LMCore = (() => {
     };
     const stageOf = pid => (groupOf(pid) === firstGroup ? 1 : 2);
 
-    const wonCount = {};   // pid → штук виграно в сеансі (wWon-штраф), наскрізно між етапами
+    const wonCount = {};   // pid → штук взято в цьому івенті: одразу відсуває в кінець черги
     const wonItem = {};    // pid → Set(itemId): правило «одна штука предмета на гравця»
     const take = (itemId, pid) => {
       wonCount[pid] = (wonCount[pid] || 0) + 1;
       (wonItem[pid] = wonItem[pid] || new Set()).add(itemId);
     };
-    const hasClassBonus = (item, pid) => item.targetClasses.length > 0 &&
-      item.targetClasses.includes(playersById[pid].classId);
 
     // усі штуки здобичі одним пласким списком — порядок звіту не залежить від етапів
     const slots = [];
@@ -439,31 +444,29 @@ const LMCore = (() => {
       const qty = Math.max(1, Number(d.quantity) || 1);
       for (let copy = 0; copy < qty; copy++) {
         slots.push({ key: d.itemId + '#' + copy, itemId: d.itemId, copyIndex: copy, item,
-          winnerId: null, priority: null, rolled: false, manual: false, candidates: [] });
+          winnerId: null, load: null, top: false, rolled: false, manual: false,
+          candidates: [] });
       }
     }
 
-    // претенденти на штуку; stage === null — без фільтра за групою (для ручних рішень)
-    const claimantsFor = (slot, stage) => Object.keys(scores)
+    // претенденти на штуку; stage === null — без фільтра за групою (для ручних рішень).
+    // Черга: спершу хто менше отримав, серед рівних — ТОПи, далі рол.
+    const claimantsFor = (slot, stage) => eligibleIds
       .filter(pid => stage === null || stageOf(pid) === stage)
       .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
                      session.claims[pid].includes(slot.itemId))
       .filter(pid => !(wonItem[pid] && wonItem[pid].has(slot.itemId)))
-      .map(pid => ({ playerId: pid, priority: scores[pid]
-        + (hasClassBonus(slot.item, pid) ? settings.pClass : 0)
-        - settings.kPenalty * loadOf(pid)
-        - settings.wWon * (wonCount[pid] || 0) }))
-      .sort((a, b) => b.priority - a.priority);
+      .map(pid => ({ playerId: pid, load: loadOf(pid), top: topOf(pid) }))
+      .sort((a, b) => a.load - b.load || (b.top ? 1 : 0) - (a.top ? 1 : 0));
 
     // ТЗ §5.7 крок 0: ручні рішення офіцера — поза чергою етапів і поза обмеженнями
     for (const slot of slots) {
       const manualWinner = overrides && overrides[slot.key];
       if (!manualWinner || !playersById[manualWinner] ||
-          scores[manualWinner] === undefined) continue;
+          playersById[manualWinner].isActive === false) continue;
       slot.candidates = claimantsFor(slot, null);
-      const c = slot.candidates.find(x => x.playerId === manualWinner);
       slot.winnerId = manualWinner; slot.manual = true;
-      slot.priority = c ? c.priority : null;
+      slot.load = loadOf(manualWinner); slot.top = topOf(manualWinner);
       take(slot.itemId, manualWinner);
     }
 
@@ -474,8 +477,8 @@ const LMCore = (() => {
         const cands = claimantsFor(slot, stage);
         slot.candidates = cands;
         if (cands.length === 0) continue;
-        const top = cands[0].priority;
-        const leaders = cands.filter(c => top - c.priority < 0.001);
+        const best = cands[0];
+        const leaders = cands.filter(c => c.load === best.load && c.top === best.top);
         let chosen = leaders[0];
         if (leaders.length > 1) {
           slot.rolled = true;
@@ -484,19 +487,19 @@ const LMCore = (() => {
             ? leaders.find(l => l.playerId === memoWinner)
             : leaders[Math.floor(rng() * leaders.length)];
         }
-        slot.winnerId = chosen.playerId; slot.priority = chosen.priority;
+        slot.winnerId = chosen.playerId; slot.load = chosen.load; slot.top = chosen.top;
         take(slot.itemId, chosen.playerId);
       }
     }
 
     const positions = slots.map(s => ({
       key: s.key, itemId: s.itemId, copyIndex: s.copyIndex,
-      winnerId: s.winnerId, priority: s.priority, rolled: s.rolled, manual: s.manual,
+      winnerId: s.winnerId, load: s.load, top: s.top,
+      rolled: s.rolled, manual: s.manual,
       stage: s.winnerId ? stageOf(s.winnerId) : 2,
-      classBonus: s.winnerId ? hasClassBonus(s.item, s.winnerId) : false,
       candidates: s.candidates
     }));
-    return { positions, scores };
+    return { positions };
   }
 
   // v1.8: база вважається незайманою, поки користувач не вніс жодних власних даних —
@@ -618,10 +621,9 @@ const LMCore = (() => {
     return { added, updated };
   }
 
-  // ТЗ §6 (v3.0.0): «ТОП Вклад» — виключно прапорець офіцера
-  function topContributors(session, scores) {
-    const presence = (session && session.presence) || {};
-    return new Set(Object.keys(scores).filter(pid => presence[pid] && presence[pid].top));
+  // ТЗ §6: «ТОП Вклад» у звіті — прапорець офіцера (якщо він увімкнений у налаштуваннях)
+  function topContributors(session, playerIds, settings) {
+    return new Set(playerIds.filter(pid => isTopFlag(session, settings, pid)));
   }
 
   // v1.2: фіксовані рядки звіту — російська (дефолт) та англійська
@@ -699,13 +701,13 @@ const LMCore = (() => {
   }
 
   // ТЗ §5.8, §3.3: групування позицій у записи історії зі снапшотами
-  function buildRecords({ positions, itemsById, playersById, scores, nowISO, eventTypeName }) {
+  function buildRecords({ positions, itemsById, playersById, nowISO, eventTypeName }) {
     const grouped = new Map();   // "pid|itemId" → {quantity, rolled, manual}
     for (const pos of positions) {
       if (!pos.winnerId) continue;
       const k = pos.winnerId + '|' + pos.itemId;
       const g = grouped.get(k) || { playerId: pos.winnerId, itemId: pos.itemId,
-        quantity: 0, rolled: false, manual: false };
+        quantity: 0, rolled: false, manual: false, load: pos.load };
       g.quantity += 1;
       g.rolled = g.rolled || pos.rolled;
       g.manual = g.manual || pos.manual;
@@ -720,7 +722,7 @@ const LMCore = (() => {
       playerId: g.playerId,
       playerNicknameSnapshot: playersById[g.playerId] ? playersById[g.playerId].nickname : '?',
       quantity: g.quantity,
-      scoreAtDistribution: scores[g.playerId] !== undefined ? scores[g.playerId] : 0,
+      loadAtDistribution: g.load === null || g.load === undefined ? 0 : g.load,
       rolled: g.rolled,
       manual: g.manual,
       cancelled: false
@@ -728,7 +730,7 @@ const LMCore = (() => {
   }
 
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
-           computeScores, historyLoad, distribute, topContributors, formatReport,
+           historyLoad, distribute, topContributors, formatReport,
            buildRecords, mapCatalogRarity, validateCatalog, syncCatalog,
            parseRoster, applyRoster, isPristine,
            groupForClassName, defaultFirstGroup };
@@ -778,7 +780,10 @@ const I18N = {
     calc: '⚖️ Рассчитать распределение',
     calcHint: 'Нужны состав альянса (вкладка 4) и добыча (вкладка 2).',
     resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Свободный остаток',
-    classBonusBadge: 'класс-бонус', rollBadge: '🎲 ролл', manualBadge: 'ручное',
+    rollBadge: '🎲 ролл', manualBadge: 'ручное',
+    gotN: n => 'получено: ' + n,
+    queueRule: 'Очередь: первым берёт тот, кто меньше получил за окно ниже; ' +
+      'среди равных — отмеченные ТОП; дальше ролл.',
     winnerLabel: 'Победитель:', autoOpt: '— авто —', claimantsGrp: 'Претенденты',
     otherGrp: 'Другой игрок альянса', chatTextH2: 'Текст для чата',
     copyBtn: '📋 Скопировать текст', confirmBtn: '✅ Подтвердить и сохранить',
@@ -831,13 +836,11 @@ const I18N = {
     delClassConfirm: n => 'Удалить класс «' + n + '»?',
     eventsEmpty: 'Список пуст — названия добавляются автоматически при подтверждении распределения.',
     allPlayersOpt: '— все игроки —', histFrom: 'с', histTo: 'по', noRecords: 'Записей нет.',
-    histScore: s => '(балл ' + s + ')', cancelRec: 'Отменить',
+    histScore: s => '(в очереди было: ' + s + ')', cancelRec: 'Отменить',
     cancelRecConfirm: (i, n) => 'Отменить запись «' + i + ' → ' + n +
       '»? Она перестанет влиять на анти-жадность.',
-    setScoreTop: 'Балл «ТОП»', setScorePresent: 'Балл обычного участника', setPClass: 'Класс-бонус P',
-    setKPenalty: 'Штраф истории K', setHistoryDays: 'Окно истории, дней',
-    setWWon: 'Штраф за выигрыш в сеансе',
-    rarityWeightsLabel: 'Веса редкости в анти-жадности:', resetDefaults: 'Сбросить к дефолтам',
+    setHistoryDays: 'Окно истории, дней', setUseTop: 'Учитывать отметку ТОП',
+    resetDefaults: 'Сбросить к дефолтам',
     resetConfirm: 'Вернуть все константы алгоритма к значениям по умолчанию?',
     langLabel: 'Язык интерфейса и отчёта:',
     exportBtn: '⬇️ Экспорт JSON', importBtn: '⬆️ Импорт JSON',
@@ -877,7 +880,10 @@ const I18N = {
     calc: '⚖️ Calculate distribution',
     calcHint: 'Need an alliance roster (tab 4) and loot (tab 2).',
     resultH2: 'Result', copyN: n => 'copy ' + n, freeLeft: 'Unclaimed',
-    classBonusBadge: 'class bonus', rollBadge: '🎲 roll', manualBadge: 'manual',
+    rollBadge: '🎲 roll', manualBadge: 'manual',
+    gotN: n => 'received: ' + n,
+    queueRule: 'Queue: whoever received less within the window below goes first; ' +
+      'among equals — those marked TOP; then a roll.',
     winnerLabel: 'Winner:', autoOpt: '— auto —', claimantsGrp: 'Claimants',
     otherGrp: 'Other alliance player', chatTextH2: 'Chat text',
     copyBtn: '📋 Copy text', confirmBtn: '✅ Confirm & save',
@@ -930,13 +936,11 @@ const I18N = {
     delClassConfirm: n => 'Delete class "' + n + '"?',
     eventsEmpty: 'The list is empty — names are added automatically when a distribution is confirmed.',
     allPlayersOpt: '— all players —', histFrom: 'from', histTo: 'to', noRecords: 'No records.',
-    histScore: s => '(score ' + s + ')', cancelRec: 'Cancel',
+    histScore: s => '(was in queue: ' + s + ')', cancelRec: 'Cancel',
     cancelRecConfirm: (i, n) => 'Cancel the record "' + i + ' → ' + n +
       '"? It will stop affecting anti-greed.',
-    setScoreTop: '"TOP" score', setScorePresent: 'Regular participant score', setPClass: 'Class bonus P',
-    setKPenalty: 'History penalty K', setHistoryDays: 'History window, days',
-    setWWon: 'Penalty per session win',
-    rarityWeightsLabel: 'Rarity weights in anti-greed:', resetDefaults: 'Reset to defaults',
+    setHistoryDays: 'History window, days', setUseTop: 'Use the TOP mark',
+    resetDefaults: 'Reset to defaults',
     resetConfirm: 'Reset all algorithm constants to their defaults?',
     langLabel: 'Interface & report language:',
     exportBtn: '⬇️ Export JSON', importBtn: '⬆️ Import JSON',
@@ -1515,20 +1519,20 @@ function renderTab3() {
 
   let resultHtml = '';
   if (ui.calcResult) {
-    const { positions, scores } = ui.calcResult;
-    const topSet = LMCore.topContributors(d, scores);
-    const fmt = n => (Math.round(n * 10) / 10).toString();
+    const { positions } = ui.calcResult;
+    const topSet = LMCore.topContributors(d, eligible.map(p => p.id), db.settings);
     const rowHtml = pos => {
       const item = itemsById[pos.itemId];
       const winner = pos.winnerId ? playersById[pos.winnerId] : null;
       const badges =
-        (pos.classBonus ? ' <span class="badge info">' + t('classBonusBadge') + '</span>' : '') +
+        (pos.top ? ' <span class="badge info">' + t('topFlag') + '</span>' : '') +
         (pos.rolled ? ' <span class="badge plain">' + t('rollBadge') + '</span>' : '') +
         (pos.manual ? ' <span class="badge plain">' + t('manualBadge') + '</span>' : '');
+      // у дужках — місце в черзі: скільки гравець уже отримав за вікно історії
       const candOpts = pos.candidates.map(c =>
         '<option value="' + c.playerId + '"' + (c.playerId === pos.winnerId ? ' selected' : '') + '>' +
         escapeHtml(playersById[c.playerId] ? playersById[c.playerId].nickname : '?') +
-        ' (' + fmt(c.priority) + ')</option>').join('');
+        ' — ' + t('gotN', c.load) + (c.top ? ' ★' : '') + '</option>').join('');
       const otherOpts = eligible
         .filter(p => !pos.candidates.some(c => c.playerId === p.id))
         .map(p => '<option value="' + p.id + '"' + (p.id === pos.winnerId ? ' selected' : '') + '>' +
@@ -1539,7 +1543,7 @@ function renderTab3() {
         ' <span class="muted small">' + t('copyN', pos.copyIndex + 1) + '</span>' +
         (winner
           ? ' → <b>' + escapeHtml(winner.nickname) + '</b>' +
-            (pos.priority !== null ? ' <span class="muted small">(' + fmt(pos.priority) + ')</span>' : '')
+            (pos.load !== null ? ' <span class="muted small">' + t('gotN', pos.load) + '</span>' : '')
           : ' → <span class="muted">' + t('freeLeft') + '</span>') +
         badges + '</div>' +
         '<div class="row small" style="margin-top:4px"><span class="muted">' + t('winnerLabel') + '</span>' +
@@ -1615,7 +1619,7 @@ function renderTab3() {
     const d2 = draft();
     const records = LMCore.buildRecords({
       positions: ui.calcResult.positions, itemsById: byId(db.items),
-      playersById: byId(pa().players), scores: ui.calcResult.scores,
+      playersById: byId(pa().players),
       nowISO: nowISO(), eventTypeName: d2.eventTypeName || t('defaultEvent') });
     pa().history.push(...records);
     const evName = (d2.eventTypeName || '').trim();
@@ -1789,7 +1793,8 @@ function renderTab4() {
         '<span class="badge plain">' + escapeHtml(r.eventTypeName) + '</span> ' +
         '<b>' + escapeHtml(r.itemNameSnapshot) + '</b> ×' + r.quantity +
         ' → <b>' + escapeHtml(r.playerNicknameSnapshot) + '</b>' +
-        ' <span class="muted small">' + t('histScore', Math.round(r.scoreAtDistribution * 10) / 10) + '</span>' +
+        ' <span class="muted small">' + t('histScore',
+          r.loadAtDistribution !== undefined ? r.loadAtDistribution : 0) + '</span>' +
         (r.rolled ? ' <span class="badge plain">🎲</span>' : '') +
         (r.manual ? ' <span class="badge plain">' + t('manualBadge') + '</span>' : '') +
         (r.cancelled ? '' : ' <button class="btn btn-sm btn-danger btnCancelRec" data-rid="' +
@@ -1807,17 +1812,11 @@ function renderTab4() {
         ' <select id="selLanguage">' + Object.keys(LANG_NAMES).map(code =>
           '<option value="' + code + '"' + (code === lang() ? ' selected' : '') + '>' +
           LANG_NAMES[code] + '</option>').join('') + '</select></label>' +
-    '</div><div class="row" style="margin-top:6px">' +
-      numField('scoreTop', t('setScoreTop'), st.scoreTop) +
-      numField('scorePresent', t('setScorePresent'), st.scorePresent) +
-      numField('pClass', t('setPClass'), st.pClass) +
-    '</div><div class="row" style="margin-top:6px">' +
-      numField('kPenalty', t('setKPenalty'), st.kPenalty) +
+    '</div><p class="small muted" style="margin:8px 0 4px">' + t('queueRule') + '</p>' +
+    '<div class="row">' +
       numField('historyDays', t('setHistoryDays'), st.historyDays) +
-      numField('wWon', t('setWWon'), st.wWon) +
-    '</div><p class="small muted" style="margin-bottom:4px">' + t('rarityWeightsLabel') + '</p><div class="row">' +
-      Object.keys(RARITY_LABELS).map(v =>
-        numField('rarityWeights.' + v, rarityLabel(v), st.rarityWeights[v])).join('') +
+      '<label class="inline small"><input type="checkbox" id="chkUseTop"' +
+        (st.useTop !== false ? ' checked' : '') + '> ' + t('setUseTop') + '</label>' +
     '</div><div class="row" style="margin-top:8px">' +
       '<button class="btn btn-sm" id="btnResetSettings">' + t('resetDefaults') + '</button></div>';
 
@@ -2132,18 +2131,14 @@ function wireTab4() {
   /* Налаштування */
   tab.querySelectorAll('.inpSetting').forEach(inp =>
     inp.addEventListener('change', e => {
-      const key = e.target.dataset.key;
-      const v = Math.max(0, Number(e.target.value) || 0);
-      if (key.startsWith('rarityWeights.')) {
-        db.settings.rarityWeights[key.split('.')[1]] = v;
-      } else if (key === 'historyDays') {
-        db.settings.historyDays = Math.round(v);
-      } else {
-        db.settings[key] = v;
-      }
-      e.target.value = key === 'historyDays' ? Math.round(v) : v;
+      const days = Math.max(1, Math.round(Number(e.target.value) || 0));
+      db.settings.historyDays = days;
+      e.target.value = days;
       mutated();
     }));
+  tab.querySelector('#chkUseTop').addEventListener('change', e => {
+    db.settings.useTop = e.target.checked; mutated();
+  });
   tab.querySelector('#selLanguage').addEventListener('change', e => {
     db.settings.language = e.target.value;
     mutated(); renderAll();

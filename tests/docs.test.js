@@ -88,17 +88,18 @@ test('константи алгоритму в документі збігают
   const html = fs.readFileSync(path.join(ROOT, 'loot-manager.html'), 'utf8');
   const core = html.match(/<script id="core">([\s\S]*?)<\/script>/)[1];
   const LMCore = new Function(core + '\n;return LMCore;')();
-  const pairs = [
-    ['pClass', /pClass\((\d+)\)/], ['kPenalty', /kPenalty\((\d+)\)/],
-    ['wWon', /wWon\((\d+)\)/], ['historyDays', /`historyDays` \((\d+)\)/],
-    ['scoreTop', /ТОП→(\d+)/], ['scorePresent', /учасник→(\d+)/]
-  ];
-  for (const [key, re] of pairs) {
-    const m = doc.match(re);
-    assert.ok(m, DOC + ': константу ' + key + ' не знайдено в тексті');
-    assert.strictEqual(Number(m[1]), LMCore.DEFAULTS[key],
-      DOC + ' каже ' + key + '=' + m[1] + ', у коді ' + LMCore.DEFAULTS[key]);
-  }
+  const m = doc.match(/`historyDays` \((\d+)\)/);
+  assert.ok(m, DOC + ': константу historyDays не знайдено в тексті');
+  assert.strictEqual(Number(m[1]), LMCore.DEFAULTS.historyDays,
+    DOC + ' каже historyDays=' + m[1] + ', у коді ' + LMCore.DEFAULTS.historyDays);
+  // документ не має називати констант, яких у ядрі вже немає
+  const dead = ['scoreTop', 'scorePresent', 'pClass', 'kPenalty', 'wWon', 'rarityWeights']
+    .filter(k => doc.includes('`' + k + '`') && LMCore.DEFAULTS[k] === undefined);
+  assert.deepStrictEqual(dead, [],
+    DOC + ' називає константи, яких у ядрі немає: ' + dead.join(', '));
+  const keys = Object.keys(LMCore.DEFAULTS).filter(k => k !== 'webhookUrl' && k !== 'language');
+  assert.deepStrictEqual(keys.sort(), ['historyDays', 'useTop'],
+    'набір констант алгоритму змінився — оновіть ' + DOC + ' і цей guard');
 });
 
 // ---- 7. Мови в документі = мови в коді ----
