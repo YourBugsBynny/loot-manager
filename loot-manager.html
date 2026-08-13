@@ -107,7 +107,10 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .tile { border: 1px solid var(--line); border-radius: 10px; background: var(--card);
   padding: 0; cursor: pointer; overflow: hidden; }
 .tile:hover, .tile:focus-visible { border-color: var(--accent); }
-.tile img { display: block; max-width: min(210px, 44vw); max-height: 132px; }
+.tile img { display: block; max-width: min(230px, 46vw); max-height: 148px; }
+/* Вертикальні картки (сундуки) стискалися вдвічі сильніше за горизонтальні —
+   даємо їм власну стелю висоти; клас вішає onload за пропорціями зображення. */
+.tile.tall img { max-height: 330px; max-width: min(200px, 42vw); }
 .tile .tile-label { display: none; padding: 5px 12px; font-size: 0.88rem;
   align-items: center; gap: 6px; }
 .tile.no-img .tile-label { display: inline-flex; }
@@ -1080,6 +1083,7 @@ function quickPickHtml(filter) {
     const img = i.catalogUid
       ? '<img src="cards/' + i.catalogUid + '_' + lang() + '.jpg" alt="' +
         escapeHtml(itemDisplayName(i)) + '" loading="lazy" ' +
+        'onload="if(this.naturalHeight>this.naturalWidth)this.parentNode.classList.add(\'tall\')" ' +
         'onerror="this.parentNode.classList.add(\'no-img\'); this.remove()">'
       : '';
     return '<button type="button" class="tile' + (img ? '' : ' no-img') + '" data-iid="' +
