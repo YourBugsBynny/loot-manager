@@ -450,14 +450,16 @@ const LMCore = (() => {
     }
 
     // претенденти на штуку; stage === null — без фільтра за групою (для ручних рішень).
-    // Черга: спершу хто менше отримав, серед рівних — ТОПи, далі рол.
+    // v4.1.0: спершу ТОПи (хто тягнув івент), усередині кожної групи — черга за
+    // отриманим, далі рол. До v4.1.0 черга стояла попереду ТОПа, і при двох івентах
+    // на день позначка майже не спрацьовувала: рівність отриманого траплялась рідко.
     const claimantsFor = (slot, stage) => eligibleIds
       .filter(pid => stage === null || stageOf(pid) === stage)
       .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
                      session.claims[pid].includes(slot.itemId))
       .filter(pid => !(wonItem[pid] && wonItem[pid].has(slot.itemId)))
       .map(pid => ({ playerId: pid, load: loadOf(pid), top: topOf(pid) }))
-      .sort((a, b) => a.load - b.load || (b.top ? 1 : 0) - (a.top ? 1 : 0));
+      .sort((a, b) => (b.top ? 1 : 0) - (a.top ? 1 : 0) || a.load - b.load);
 
     // ТЗ §5.7 крок 0: ручні рішення офіцера — поза чергою етапів і поза обмеженнями
     for (const slot of slots) {
@@ -782,8 +784,8 @@ const I18N = {
     resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Свободный остаток',
     rollBadge: '🎲 ролл', manualBadge: 'ручное',
     gotN: n => 'получено: ' + n,
-    queueRule: 'Очередь: первым берёт тот, кто меньше получил за окно ниже; ' +
-      'среди равных — отмеченные ТОП; дальше ролл.',
+    queueRule: 'Очередь: сначала отмеченные ТОП, потом остальные; ' +
+      'внутри каждой группы первым берёт тот, кто меньше получил за окно ниже; дальше ролл.',
     winnerLabel: 'Победитель:', autoOpt: '— авто —', claimantsGrp: 'Претенденты',
     otherGrp: 'Другой игрок альянса', chatTextH2: 'Текст для чата',
     copyBtn: '📋 Скопировать текст', confirmBtn: '✅ Подтвердить и сохранить',
@@ -882,8 +884,8 @@ const I18N = {
     resultH2: 'Result', copyN: n => 'copy ' + n, freeLeft: 'Unclaimed',
     rollBadge: '🎲 roll', manualBadge: 'manual',
     gotN: n => 'received: ' + n,
-    queueRule: 'Queue: whoever received less within the window below goes first; ' +
-      'among equals — those marked TOP; then a roll.',
+    queueRule: 'Queue: those marked TOP first, then everyone else; ' +
+      'inside each group whoever received less within the window below goes first; then a roll.',
     winnerLabel: 'Winner:', autoOpt: '— auto —', claimantsGrp: 'Claimants',
     otherGrp: 'Other alliance player', chatTextH2: 'Chat text',
     copyBtn: '📋 Copy text', confirmBtn: '✅ Confirm & save',

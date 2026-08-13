@@ -242,15 +242,35 @@ test('distribute v4: серед рівних першим бере ТОП, і л
   const off = LMCore.distribute({ ...ctx, settings: { ...S, useTop: false } });
   assert.strictEqual(off.positions[0].rolled, true);
 });
-test('distribute v4: ТОП із більшим отриманим програє тому, хто взяв менше', () => {
-  const hist = [mkRec('p-b', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
+test('distribute v4.1: ТОП бере першим навіть із більшим отриманим', () => {
+  const hist = [mkRec('p-b', 'i-sword', '2026-08-10T00:00:00.000Z', 3)];
   const session = { eventTypeName: 'Бос', presence: { 'p-b': { top: true } },
     drops: [{ itemId: 'i-box', quantity: 1 }],
     claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } };
+  const ctx = { session, playersById: PBYID, classesById: CLSBYID, itemsById: ITBYID,
+    history: hist, settings: S, nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} };
+  const r = LMCore.distribute(ctx);
+  assert.strictEqual(r.positions[0].winnerId, 'p-b', 'хто тягнув івент — обирає першим');
+  assert.strictEqual(r.positions[0].load, 3);
+  // з вимкненим useTop повертається чиста черга
+  const off = LMCore.distribute({ ...ctx, settings: { ...S, useTop: false } });
+  assert.strictEqual(off.positions[0].winnerId, 'p-a');
+});
+test('distribute v4.1: між ТОПами діє черга за отриманим', () => {
+  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 2)];
+  const session = { eventTypeName: 'Бос',
+    presence: { 'p-a': { top: true }, 'p-b': { top: true } },
+    drops: [{ itemId: 'i-box', quantity: 2 }],
+    claims: { 'p-a': ['i-box'], 'p-b': ['i-box'], 'p-c': ['i-box'] } };
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
     classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
     nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
-  assert.strictEqual(positions[0].winnerId, 'p-a', 'черга сильніша за ТОП');
+  assert.strictEqual(positions[0].winnerId, 'p-b', 'з двох ТОПів першим — хто менше взяв');
+  assert.strictEqual(positions[1].winnerId, 'p-a', 'далі другий ТОП');
+  // p-c — ДД, тобто другий етап: у претендентах першого етапу його немає
+  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId + ':' + c.load),
+    ['p-b:0', 'p-a:2']);
+  assert.deepStrictEqual(positions.map(p => p.stage), [1, 1]);
 });
 test('distribute: етап важить більше за штраф — жадібний танк випереджає ДД', () => {
   const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
