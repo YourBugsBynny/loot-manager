@@ -1620,10 +1620,15 @@ function renderTab4() {
   /* — Класи — */
   const classesHtml =
     '<div class="table-wrap"><table><thead><tr><th>' + t('thName') +
+      '</th><th>' + t('thGroup') +
       '</th><th>w<sub>dmg</sub></th><th>w<sub>taken</sub></th><th>w<sub>heal</sub></th><th></th></tr></thead><tbody>' +
     db.classes.map(c => '<tr' + (c.isArchived ? ' class="cancelled"' : '') + '>' +
       '<td><input type="text" class="inpClsName" data-cid="' + c.id + '" value="' +
         escapeHtml(c.name) + '" maxlength="30" style="width:130px"></td>' +
+      '<td><select class="selClsGroup" data-cid="' + c.id + '">' +
+        '<option value="A"' + (c.group === 'A' ? ' selected' : '') + '>' + t('groupA') + '</option>' +
+        '<option value="B"' + (c.group === 'A' ? '' : ' selected') + '>' + t('groupB') + '</option>' +
+      '</select></td>' +
       ['wDmg', 'wTaken', 'wHeal'].map(k =>
         '<td><input type="number" class="inpClsW" data-cid="' + c.id + '" data-w="' + k +
         '" min="0" max="1" step="0.05" value="' + c[k] + '" style="width:70px"></td>').join('') +
@@ -1923,7 +1928,7 @@ function wireTab4() {
       banner(t('classExists')); return;
     }
     db.classes.push({ id: LMCore.uuid(), name, wDmg: 0.8, wTaken: 0.1, wHeal: 0.1,
-      isArchived: false });
+      group: LMCore.groupForClassName(name), isArchived: false });
     mutated(); renderTab4();
   });
   tab.querySelectorAll('.inpClsName').forEach(inp =>
@@ -1932,6 +1937,12 @@ function wireTab4() {
       const name = e.target.value.trim();
       if (!name) { e.target.value = c.name; return; }
       c.name = name; mutated();
+    }));
+  tab.querySelectorAll('.selClsGroup').forEach(sel =>
+    sel.addEventListener('change', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      c.group = e.target.value === 'A' ? 'A' : 'B';
+      mutated();
     }));
   tab.querySelectorAll('.inpClsW').forEach(inp =>
     inp.addEventListener('change', e => {
