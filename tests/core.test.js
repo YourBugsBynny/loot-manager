@@ -370,16 +370,18 @@ test('formatReport: дефолт без lang — російська, побай�
   const itemsById = Object.fromEntries(items6.map(i => [i.id, i]));
   const mkPos = (itemId, copyIndex, winnerId) => ({ key: itemId + '#' + copyIndex,
     itemId, copyIndex, winnerId, priority: 0, rolled: false, manual: false,
-    classBonus: false, candidates: [] });
+    stage: 1, classBonus: false, candidates: [] });
   const positions = [
     mkPos('m', 0, 'n1'), mkPos('s', 0, 'n2'), mkPos('s', 1, 'n3'),
     mkPos('k', 0, 'n4'), mkPos('r', 0, 'n5'), mkPos('r', 1, 'n6'), mkPos('r', 2, null)
   ];
   const text = LMCore.formatReport({ allianceName: 'Alpha', eventTypeName: 'PvP-Івент',
-    positions, itemsById, playersById, classesById, topSet: new Set(['n1']) });
+    positions, itemsById, playersById, classesById, topSet: new Set(['n1']),
+    firstGroup: 'A' });
   assert.strictEqual(text,
     '📜 [АЛЬЯНС: Alpha] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (PvP-Івент)\n' +
     '\n' +
+    '▸ ЭТАП 1 — Танки и лекари\n' +
     '🔹 Меч Дракона (1 шт.) — @Нік1 [Танк | ТОП Вклад]\n' +
     '🔹 Посох Сили (2 шт.) — @Нік2 [Маг], @Нік3 [Маг]\n' +
     '🔹 Кольчуга Гвардійця (1 шт.) — @Нік4 [МДД]\n' +
@@ -395,6 +397,35 @@ test('formatReport: кілька вільних штук — одна позна
     positions: [mkPos2(0, 'p-a'), mkPos2(1, null), mkPos2(2, null)],
     itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set() });
   assert.strictEqual((text.match(/\[Свободный остаток\]/g) || []).length, 1);
+});
+test('formatReport v3: дві секції етапів у порядку сеансу', () => {
+  const positions = [
+    { key: 'i-sword#0', itemId: 'i-sword', copyIndex: 0, winnerId: 'p-a', stage: 1,
+      priority: 100, rolled: false, manual: false, classBonus: false, candidates: [] },
+    { key: 'i-box#0', itemId: 'i-box', copyIndex: 0, winnerId: 'p-c', stage: 2,
+      priority: 50, rolled: false, manual: false, classBonus: false, candidates: [] },
+    { key: 'i-box#1', itemId: 'i-box', copyIndex: 1, winnerId: null, stage: 2,
+      priority: null, rolled: false, manual: false, classBonus: false, candidates: [] }
+  ];
+  const text = LMCore.formatReport({ allianceName: 'СПАРТА', eventTypeName: 'Бос',
+    positions, itemsById: ITBYID, playersById: PBYID, classesById: CLSBYID,
+    topSet: new Set(['p-a']), lang: 'ru', firstGroup: 'A' });
+  const lines = text.split('\n').filter(Boolean);
+  assert.strictEqual(lines[1], '▸ ЭТАП 1 — Танки и лекари');
+  assert.strictEqual(lines[2], '🔹 Меч (1 шт.) — @Andriy [Танк | ТОП Вклад]');
+  assert.strictEqual(lines[3], '▸ ЭТАП 2 — ДД');
+  assert.strictEqual(lines[4], '🔹 Скриня (2 шт.) — @Chip [МДД], [Свободный остаток]');
+});
+test('formatReport v3: вечірній порядок міняє підписи етапів місцями', () => {
+  const positions = [
+    { key: 'i-box#0', itemId: 'i-box', copyIndex: 0, winnerId: 'p-c', stage: 1,
+      priority: 50, rolled: false, manual: false, classBonus: false, candidates: [] }
+  ];
+  const text = LMCore.formatReport({ allianceName: 'СПАРТА', eventTypeName: 'Бос',
+    positions, itemsById: ITBYID, playersById: PBYID, classesById: CLSBYID,
+    topSet: new Set(), lang: 'ru', firstGroup: 'B' });
+  assert.ok(text.includes('▸ ЭТАП 1 — ДД'), text);
+  assert.ok(!text.includes('ЭТАП 2'), 'порожній етап не друкується');
 });
 test('buildRecords: групування пар гравець×предмет, снапшоти, пропуск залишку (крит. 11)', () => {
   const mkPos3 = (itemId, ci, w, extra) => Object.assign({ key: itemId + '#' + ci, itemId,
@@ -437,14 +468,15 @@ test('migrate: бекфіл і нормалізація settings.language (де�
 test('formatReport: російська — побайтово', () => {
   const itemsById = { b: mkItem('b', 'Скриня', 'common') };
   const mkPosL = (ci, w) => ({ key: 'b#' + ci, itemId: 'b', copyIndex: ci, winnerId: w,
-    priority: 0, rolled: false, manual: false, classBonus: false, candidates: [] });
+    priority: 0, rolled: false, manual: false, stage: 1, classBonus: false, candidates: [] });
   const text = LMCore.formatReport({ allianceName: 'Alpha', eventTypeName: 'PvP',
     positions: [mkPosL(0, 'p-a'), mkPosL(1, null)],
     itemsById, playersById: PBYID, classesById: CLSBYID,
-    topSet: new Set(['p-a']), lang: 'ru' });
+    topSet: new Set(['p-a']), lang: 'ru', firstGroup: 'A' });
   assert.strictEqual(text,
     '📜 [АЛЬЯНС: Alpha] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (PvP)\n' +
     '\n' +
+    '▸ ЭТАП 1 — Танки и лекари\n' +
     '🔹 Скриня (2 шт.) — @Andriy [Танк | ТОП Вклад], [Свободный остаток]\n' +
     '\n' +
     'Спасибо всем за участие! Предметы ждут в магазине альянса.');
@@ -452,14 +484,15 @@ test('formatReport: російська — побайтово', () => {
 test('formatReport: англійська — побайтово', () => {
   const itemsById = { b: mkItem('b', 'Скриня', 'common') };
   const mkPosL = (ci, w) => ({ key: 'b#' + ci, itemId: 'b', copyIndex: ci, winnerId: w,
-    priority: 0, rolled: false, manual: false, classBonus: false, candidates: [] });
+    priority: 0, rolled: false, manual: false, stage: 1, classBonus: false, candidates: [] });
   const text = LMCore.formatReport({ allianceName: 'Alpha', eventTypeName: 'PvP',
     positions: [mkPosL(0, 'p-a'), mkPosL(1, null)],
     itemsById, playersById: PBYID, classesById: CLSBYID,
-    topSet: new Set(['p-a']), lang: 'en' });
+    topSet: new Set(['p-a']), lang: 'en', firstGroup: 'A' });
   assert.strictEqual(text,
     '📜 [ALLIANCE: Alpha] LOOT DISTRIBUTION (PvP)\n' +
     '\n' +
+    '▸ STAGE 1 — Tanks & healers\n' +
     '🔹 Скриня (2 pcs) — @Andriy [Танк | TOP Contribution], [Unclaimed]\n' +
     '\n' +
     'Thanks everyone for participating! Items are waiting in the alliance shop.');

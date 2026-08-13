@@ -583,44 +583,62 @@ const LMCore = (() => {
   const REPORT_I18N = Object.freeze({
     ru: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (' + e + ')',
           pcs: 'шт.', top: 'ТОП Вклад', free: '[Свободный остаток]',
+          stage: (n, who) => '▸ ЭТАП ' + n + ' — ' + who,
+          groupA: 'Танки и лекари', groupB: 'ДД',
           footer: 'Спасибо всем за участие! Предметы ждут в магазине альянса.' },
     en: { header: (a, e) => '📜 [ALLIANCE: ' + a + '] LOOT DISTRIBUTION (' + e + ')',
           pcs: 'pcs', top: 'TOP Contribution', free: '[Unclaimed]',
+          stage: (n, who) => '▸ STAGE ' + n + ' — ' + who,
+          groupA: 'Tanks & healers', groupB: 'DPS',
           footer: 'Thanks everyone for participating! Items are waiting in the alliance shop.' }
   });
 
-  // ТЗ §6: рядок на предмет; кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
+  // ТЗ §6 (v3.0.0): дві секції етапів; рядок на предмет усередині секції;
+  // кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
   function formatReport({ allianceName, eventTypeName, positions, itemsById,
-                          playersById, classesById, topSet, lang }) {
+                          playersById, classesById, topSet, lang, firstGroup }) {
     const L = REPORT_I18N[lang] || REPORT_I18N.ru;
-    const byItem = [];       // порядок першої появи предмета
-    const groups = new Map();
-    for (const pos of positions) {
-      if (!groups.has(pos.itemId)) { groups.set(pos.itemId, []); byItem.push(pos.itemId); }
-      groups.get(pos.itemId).push(pos);
-    }
-    const lines = [];
-    for (const itemId of byItem) {
-      const item = itemsById[itemId];
-      const posList = groups.get(itemId);
-      const entries = [];
-      let freeCount = 0;
-      for (const pos of posList) {
-        if (!pos.winnerId) { freeCount++; continue; }
-        const player = playersById[pos.winnerId];
-        const cls = player && classesById[player.classId];
-        const nick = player ? player.nickname : '?';
-        const clsName = cls ? cls.name : '?';
-        const topMark = topSet.has(pos.winnerId) ? ' | ' + L.top : '';
-        entries.push('@' + nick + ' [' + clsName + topMark + ']');
+    const first = firstGroup === 'B' ? 'B' : 'A';
+    const groupName = g => (g === 'A' ? L.groupA : L.groupB);
+    const linesFor = stage => {
+      const byItem = [];       // порядок першої появи предмета в межах етапу
+      const groups = new Map();
+      for (const pos of positions) {
+        if ((pos.stage === 1 ? 1 : 2) !== stage) continue;
+        if (!groups.has(pos.itemId)) { groups.set(pos.itemId, []); byItem.push(pos.itemId); }
+        groups.get(pos.itemId).push(pos);
       }
-      if (freeCount > 0) entries.push(L.free);
-      const displayName = item ? ((lang === 'en' && item.nameEn) ? item.nameEn : item.name) : '?';
-      lines.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
-        entries.join(', '));
+      const out = [];
+      for (const itemId of byItem) {
+        const item = itemsById[itemId];
+        const posList = groups.get(itemId);
+        const entries = [];
+        let freeCount = 0;
+        for (const pos of posList) {
+          if (!pos.winnerId) { freeCount++; continue; }
+          const player = playersById[pos.winnerId];
+          const cls = player && classesById[player.classId];
+          const nick = player ? player.nickname : '?';
+          const clsName = cls ? cls.name : '?';
+          const topMark = topSet.has(pos.winnerId) ? ' | ' + L.top : '';
+          entries.push('@' + nick + ' [' + clsName + topMark + ']');
+        }
+        if (freeCount > 0) entries.push(L.free);
+        const displayName = item ? ((lang === 'en' && item.nameEn) ? item.nameEn : item.name) : '?';
+        out.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
+          entries.join(', '));
+      }
+      return out;
+    };
+    const blocks = [];
+    for (const stage of [1, 2]) {
+      const lines = linesFor(stage);
+      if (lines.length === 0) continue;
+      const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
+      blocks.push(L.stage(stage, groupName(g)) + '\n' + lines.join('\n'));
     }
     return L.header(allianceName, eventTypeName) + '\n\n' +
-      lines.join('\n') + '\n\n' + L.footer;
+      blocks.join('\n\n') + '\n\n' + L.footer;
   }
 
   // ТЗ §5.8, §3.3: групування позицій у записи історії зі снапшотами
