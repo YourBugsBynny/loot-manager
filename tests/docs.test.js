@@ -91,7 +91,7 @@ test('константи алгоритму в документі збігают
   const pairs = [
     ['pClass', /pClass\((\d+)\)/], ['kPenalty', /kPenalty\((\d+)\)/],
     ['wWon', /wWon\((\d+)\)/], ['historyDays', /`historyDays` \((\d+)\)/],
-    ['scoreTop', /ТОП→(\d+)/], ['scorePresent', /присутній→(\d+)/]
+    ['scoreTop', /ТОП→(\d+)/], ['scorePresent', /учасник→(\d+)/]
   ];
   for (const [key, re] of pairs) {
     const m = doc.match(re);
@@ -149,6 +149,36 @@ test('cards/<uid>_<мова>.jpg — обидві мови для кожного
     .filter(([, langs]) => !(langs.includes('ru') && langs.includes('en')))
     .map(([uid]) => uid);
   assert.deepStrictEqual(incomplete, [], 'без пари ru/en: uid ' + incomplete.join(', '));
+});
+
+// ---- 11. Групи класів: документ і код називають однакові дефолти ----
+test('групи класів у документі збігаються з ядром', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'loot-manager.html'), 'utf8');
+  const core = html.match(/<script id="core">([\s\S]*?)<\/script>/)[1];
+  const LMCore = new Function(core + '\n;return LMCore;')();
+  const db = LMCore.emptyDb(new Date(0).toISOString());
+  const inCode = db.classes.filter(c => c.group === 'A').map(c => c.name).sort();
+  assert.deepStrictEqual(inCode, ['Воин', 'Жрец'],
+    'засів груп змінився: ' + inCode.join(', '));
+  const namesInDoc = (doc.match(/воин\/жрец\/танк\/лекарь\/хил/) || [])[0];
+  assert.ok(namesInDoc, DOC + ': перелік назв класів групи A не знайдено');
+  for (const n of namesInDoc.split('/')) {
+    assert.strictEqual(LMCore.groupForClassName(n), 'A',
+      DOC + ' називає «' + n + '» групою A, у коді — ' + LMCore.groupForClassName(n));
+  }
+  assert.ok(/перша група класів/.test(doc), DOC + ': опис етапів розподілу не знайдено');
+});
+
+// ---- 12. Дефолт порядку етапів у документі = поведінка коду ----
+test('межа «ранок/вечір» у документі збігається з кодом', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'loot-manager.html'), 'utf8');
+  const core = html.match(/<script id="core">([\s\S]*?)<\/script>/)[1];
+  const LMCore = new Function(core + '\n;return LMCore;')();
+  const m = doc.match(/`defaultFirstGroup`: <(\d+) год → A/);
+  assert.ok(m, DOC + ': межу defaultFirstGroup не знайдено');
+  const bound = Number(m[1]);
+  assert.strictEqual(LMCore.defaultFirstGroup(bound - 1), 'A');
+  assert.strictEqual(LMCore.defaultFirstGroup(bound), 'B');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
