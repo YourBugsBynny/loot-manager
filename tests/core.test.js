@@ -76,13 +76,13 @@ test('validateImport: відхиляє сміття, приймає валідн
 });
 
 // ---- Task 3 ----
-function mkClass(id, name, wDmg, wTaken, wHeal) {
-  return { id, name, wDmg, wTaken, wHeal, isArchived: false };
+function mkClass(id, name, wDmg, wTaken, wHeal, group) {
+  return { id, name, wDmg, wTaken, wHeal, group: group || 'B', isArchived: false };
 }
 const CLS = {
-  tank: mkClass('c-tank', 'Танк', 0.2, 0.7, 0.1),
-  heal: mkClass('c-heal', 'Хіл', 0.1, 0.1, 0.8),
-  mdd:  mkClass('c-mdd', 'МДД', 0.8, 0.1, 0.1)
+  tank: mkClass('c-tank', 'Танк', 0.2, 0.7, 0.1, 'A'),
+  heal: mkClass('c-heal', 'Хіл', 0.1, 0.1, 0.8, 'A'),
+  mdd:  mkClass('c-mdd', 'МДД', 0.8, 0.1, 0.1, 'B')
 };
 const CLSBYID = Object.fromEntries(Object.values(CLS).map(c => [c.id, c]));
 function mkPlayer(id, nickname, classId) {
@@ -109,6 +109,20 @@ test('computeScores v3: вибулий гравець балу не отриму
 test('computeScores v3: порожня чернетка — усі по 50', () => {
   const scores = LMCore.computeScores({}, PBYID, S);
   assert.deepStrictEqual(scores, { 'p-a': 50, 'p-b': 50, 'p-c': 50 });
+});
+test('groupForClassName: танки й лекарі — A, решта — B', () => {
+  for (const n of ['Воин', 'воин', 'Жрец', 'Танк', 'Лекарь', 'Хил']) {
+    assert.strictEqual(LMCore.groupForClassName(n), 'A', n);
+  }
+  for (const n of ['Маг', 'Разбойник', 'Лучник', 'Некромант', '']) {
+    assert.strictEqual(LMCore.groupForClassName(n), 'B', n);
+  }
+});
+test('defaultFirstGroup: до 15:00 — танки/лекарі, далі — ДД', () => {
+  assert.strictEqual(LMCore.defaultFirstGroup(9), 'A');
+  assert.strictEqual(LMCore.defaultFirstGroup(14), 'A');
+  assert.strictEqual(LMCore.defaultFirstGroup(15), 'B');
+  assert.strictEqual(LMCore.defaultFirstGroup(21), 'B');
 });
 
 // ---- Task 4 ----
@@ -140,11 +154,13 @@ test('historyLoad: вікно N днів, cancelled і рідкість (ТЗ §
   ];
   assert.strictEqual(LMCore.historyLoad(hist, ITBYID, 'p-a', NOW, S), 8 + 3);
 });
+// з v3.0.0 бонуси й штрафи порівнюють претендентів усередині одного етапу,
+// тому обидва претенденти тут — з групи A (танк і хіл)
 test('distribute: клас-бонус перемагає при рівному вкладі (крит. приймання 4)', () => {
   const session = { eventTypeName: 'Бос',
-    presence: { 'p-a': { top: false }, 'p-c': { top: false } },
+    presence: { 'p-a': { top: false }, 'p-b': { top: false } },
     drops: [{ itemId: 'i-sword', quantity: 1 }],
-    claims: { 'p-a': ['i-sword'], 'p-c': ['i-sword'] } };
+    claims: { 'p-a': ['i-sword'], 'p-b': ['i-sword'] } };
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
     classesById: CLSBYID, itemsById: ITBYID, history: [], settings: S,
     nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
@@ -152,20 +168,33 @@ test('distribute: клас-бонус перемагає при рівному �
   assert.strictEqual(positions[0].winnerId, 'p-a');          // танк, бонус +25
   assert.strictEqual(positions[0].classBonus, true);
   assert.strictEqual(positions[0].rolled, false);
-  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-a', 'p-c']);
+  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-a', 'p-b']);
   assert.strictEqual(positions[0].candidates[0].priority, 75);   // 50+25
   assert.strictEqual(positions[0].candidates[1].priority, 50);
 });
 test('distribute: анти-жадібність — вчорашня легендарка програє (крит. 5)', () => {
   const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
   const session = { eventTypeName: 'Бос',
-    presence: { 'p-a': { top: false }, 'p-c': { top: false } },
+    presence: { 'p-a': { top: false }, 'p-b': { top: false } },
+    drops: [{ itemId: 'i-box', quantity: 1 }],
+    claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } };
+  const { positions } = LMCore.distribute({ session, playersById: PBYID,
+    classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
+    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
+  assert.strictEqual(positions[0].winnerId, 'p-b');   // p-a: 50−10·8=−30
+});
+test('distribute: етап важить більше за штраф — жадібний танк випереджає ДД', () => {
+  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
+  const session = { eventTypeName: 'Бос', firstGroup: 'A',
+    presence: {},
     drops: [{ itemId: 'i-box', quantity: 1 }],
     claims: { 'p-a': ['i-box'], 'p-c': ['i-box'] } };
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
     classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
     nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
-  assert.strictEqual(positions[0].winnerId, 'p-c');   // p-a: 50−10·8=−30
+  // p-a має −30 проти 50 у p-c, але p-c у другій групі й до першого етапу не допущений
+  assert.strictEqual(positions[0].winnerId, 'p-a');
+  assert.strictEqual(positions[0].stage, 1);
 });
 test('distribute: порядок за рідкістю, одна штука на гравця, вільний залишок', () => {
   const session = { eventTypeName: 'Бос',
@@ -220,6 +249,65 @@ test('distribute: override — ручний переможець поза пре
   // p-a більше не має wWon-штрафу і забирає скриню з повним балом (без клас-бонусу)
   assert.strictEqual(over.positions[1].winnerId, 'p-a');
   assert.strictEqual(over.positions[1].priority, 100);
+});
+
+// ---- v3.0.0: два етапи розподілу ----
+const stageCtx = session => ({ session, playersById: PBYID, classesById: CLSBYID,
+  itemsById: ITBYID, history: [], settings: S, nowISO: NOW, rng: rngZero,
+  overrides: {}, rollMemo: {} });
+
+test('distribute: етап 1 (танки/лекарі) забирає предмет, ДД дістається залишок', () => {
+  const { positions } = LMCore.distribute(stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
+    presence: {},
+    drops: [{ itemId: 'i-box', quantity: 2 }],
+    claims: { 'p-a': ['i-box'], 'p-c': ['i-box'] } }));   // p-a — танк (A), p-c — МДД (B)
+  assert.deepStrictEqual(positions.map(p => p.winnerId), ['p-a', 'p-c']);
+  assert.deepStrictEqual(positions.map(p => p.stage), [1, 2]);
+});
+test('distribute: вечірній порядок дзеркалить результат', () => {
+  const { positions } = LMCore.distribute(stageCtx({ eventTypeName: 'Бос', firstGroup: 'B',
+    presence: {},
+    drops: [{ itemId: 'i-box', quantity: 2 }],
+    claims: { 'p-a': ['i-box'], 'p-c': ['i-box'] } }));
+  assert.deepStrictEqual(positions.map(p => p.winnerId), ['p-c', 'p-a']);
+  assert.deepStrictEqual(positions.map(p => p.stage), [1, 2]);
+});
+test('distribute: гравець першого етапу без виграшу в другий не переходить', () => {
+  const { positions } = LMCore.distribute(stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
+    presence: {},
+    drops: [{ itemId: 'i-box', quantity: 2 }],
+    claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } }));   // обидва — група A
+  assert.deepStrictEqual(positions.map(p => p.winnerId).sort(), ['p-a', 'p-b']);
+  assert.deepStrictEqual(positions.map(p => p.stage), [1, 1]);
+});
+test('distribute: вільний залишок після обох етапів іде в другий етап', () => {
+  const { positions } = LMCore.distribute(stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
+    presence: {},
+    drops: [{ itemId: 'i-box', quantity: 2 }],
+    claims: { 'p-a': ['i-box'] } }));
+  assert.deepStrictEqual(positions.map(p => p.winnerId), ['p-a', null]);
+  assert.deepStrictEqual(positions.map(p => p.stage), [1, 2]);
+});
+test('distribute: wWon діє наскрізно всередині етапу', () => {
+  const { positions } = LMCore.distribute(stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
+    presence: {},
+    drops: [{ itemId: 'i-sword', quantity: 1 }, { itemId: 'i-box', quantity: 1 }],
+    claims: { 'p-a': ['i-sword', 'i-box'], 'p-b': ['i-box'] } }));
+  assert.strictEqual(positions[0].winnerId, 'p-a');   // меч: єдиний претендент
+  assert.strictEqual(positions[1].winnerId, 'p-b');   // скриня: p-a 50−50=0 проти p-b 50
+  assert.strictEqual(positions[1].rolled, false);
+  assert.deepStrictEqual(positions.map(p => p.stage), [1, 1]);
+});
+test('distribute: override віддає предмет гравцю іншої групи, stage — за його групою', () => {
+  const ctx = stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
+    presence: {},
+    drops: [{ itemId: 'i-box', quantity: 1 }],
+    claims: { 'p-a': ['i-box'] } });
+  const { positions } = LMCore.distribute({ ...ctx, overrides: { 'i-box#0': 'p-c' } });
+  assert.strictEqual(positions[0].winnerId, 'p-c');
+  assert.strictEqual(positions[0].manual, true);
+  assert.strictEqual(positions[0].stage, 2);          // p-c у групі B, першою йде A
+  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-a']);
 });
 
 // ---- Task 5 ----

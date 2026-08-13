@@ -251,8 +251,17 @@ const LMCore = (() => {
   // ваги для автостворюваних класів при імпорті складу (за назвою, без регістру)
   const CLASS_WEIGHT_HINTS = {
     'воин': [0.3, 0.6, 0.1], 'жрец': [0.1, 0.1, 0.8],
-    'танк': [0.2, 0.7, 0.1], 'хил': [0.1, 0.1, 0.8]
+    'танк': [0.2, 0.7, 0.1], 'лекарь': [0.1, 0.1, 0.8], 'хил': [0.1, 0.1, 0.8]
   };
+
+  // v3.0.0: група розподілу класу — 'A' танки та лекарі, 'B' ДД (усе інше).
+  // Реальний процес альянсу: зранку першими обирають A, ввечері — B.
+  const GROUP_A_NAMES = Object.freeze(['воин', 'жрец', 'танк', 'лекарь', 'хил']);
+  function groupForClassName(name) {
+    return GROUP_A_NAMES.includes(String(name || '').trim().toLowerCase()) ? 'A' : 'B';
+  }
+  // година за місцевим часом клієнта; межа — 15:00
+  function defaultFirstGroup(hour) { return Number(hour) < 15 ? 'A' : 'B'; }
 
   function emptyAllianceData() {
     return { players: [], history: [], eventTypes: [], draftSession: null };
@@ -265,7 +274,8 @@ const LMCore = (() => {
       activeAllianceId: alliance.id,
       settings: defaultSettings(),
       classes: CLASS_SEED.map(([name, wDmg, wTaken, wHeal]) =>
-        ({ id: uuid(), name, wDmg, wTaken, wHeal, isArchived: false })),
+        ({ id: uuid(), name, wDmg, wTaken, wHeal,
+           group: groupForClassName(name), isArchived: false })),
       items: [],
       alliances: [alliance],
       perAlliance: { [alliance.id]: emptyAllianceData() }
@@ -346,7 +356,6 @@ const LMCore = (() => {
             nowISO, overrides, rollMemo } = ctx;
     const rng = ctx.rng || Math.random;
     const scores = computeScores(session, playersById, settings);
-    const presentIds = Object.keys(scores);
     const loadCache = new Map();
     const loadOf = pid => {
       if (!loadCache.has(pid)) {
@@ -358,56 +367,89 @@ const LMCore = (() => {
       .map((d, idx) => ({ ...d, idx,
         rank: (itemsById[d.itemId] && RARITY_RANK[itemsById[d.itemId].rarity]) || 0 }))
       .sort((a, b) => b.rank - a.rank || a.idx - b.idx);
-    const wonCount = {};   // pid → штук виграно в сеансі (wWon-штраф)
+    // v3.0.0: порядок етапів задає офіцер у чернетці сеансу (ранок / вечір)
+    const firstGroup = session.firstGroup === 'B' ? 'B' : 'A';
+    const groupOf = pid => {
+      const p = playersById[pid];
+      const c = p && classesById[p.classId];
+      return c && c.group === 'A' ? 'A' : 'B';
+    };
+    const stageOf = pid => (groupOf(pid) === firstGroup ? 1 : 2);
+
+    const wonCount = {};   // pid → штук виграно в сеансі (wWon-штраф), наскрізно між етапами
     const wonItem = {};    // pid → Set(itemId): правило «одна штука предмета на гравця»
-    const positions = [];
+    const take = (itemId, pid) => {
+      wonCount[pid] = (wonCount[pid] || 0) + 1;
+      (wonItem[pid] = wonItem[pid] || new Set()).add(itemId);
+    };
+    const hasClassBonus = (item, pid) => item.targetClasses.length > 0 &&
+      item.targetClasses.includes(playersById[pid].classId);
+
+    // усі штуки здобичі одним пласким списком — порядок звіту не залежить від етапів
+    const slots = [];
     for (const d of drops) {
       const item = itemsById[d.itemId];
       if (!item) continue;
       const qty = Math.max(1, Number(d.quantity) || 1);
-      const hasClassBonus = pid => item.targetClasses.length > 0 &&
-        item.targetClasses.includes(playersById[pid].classId);
       for (let copy = 0; copy < qty; copy++) {
-        const key = d.itemId + '#' + copy;
-        const prioOf = pid => scores[pid]
-          + (hasClassBonus(pid) ? settings.pClass : 0)
-          - settings.kPenalty * loadOf(pid)
-          - settings.wWon * (wonCount[pid] || 0);
-        const cands = presentIds
-          .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
-                         session.claims[pid].includes(d.itemId))
-          .filter(pid => !(wonItem[pid] && wonItem[pid].has(d.itemId)))
-          .map(pid => ({ playerId: pid, priority: prioOf(pid) }))
-          .sort((a, b) => b.priority - a.priority);
-        const manualWinner = overrides && overrides[key];
-        let winnerId = null, priority = null, rolled = false, manual = false;
-        if (manualWinner && playersById[manualWinner] && scores[manualWinner] !== undefined) {
-          winnerId = manualWinner; manual = true;
-          const c = cands.find(x => x.playerId === manualWinner);
-          priority = c ? c.priority : null;
-        } else if (cands.length > 0) {
-          const top = cands[0].priority;
-          const leaders = cands.filter(c => top - c.priority < 0.001);
-          if (leaders.length > 1) {
-            rolled = true;
-            const memoWinner = rollMemo && rollMemo[key];
-            const chosen = (memoWinner && leaders.some(l => l.playerId === memoWinner))
-              ? leaders.find(l => l.playerId === memoWinner)
-              : leaders[Math.floor(rng() * leaders.length)];
-            winnerId = chosen.playerId; priority = chosen.priority;
-          } else {
-            winnerId = leaders[0].playerId; priority = leaders[0].priority;
-          }
-        }
-        if (winnerId) {
-          wonCount[winnerId] = (wonCount[winnerId] || 0) + 1;
-          (wonItem[winnerId] = wonItem[winnerId] || new Set()).add(d.itemId);
-        }
-        positions.push({ key, itemId: d.itemId, copyIndex: copy, winnerId, priority,
-          rolled, manual, classBonus: winnerId ? hasClassBonus(winnerId) : false,
-          candidates: cands });
+        slots.push({ key: d.itemId + '#' + copy, itemId: d.itemId, copyIndex: copy, item,
+          winnerId: null, priority: null, rolled: false, manual: false, candidates: [] });
       }
     }
+
+    // претенденти на штуку; stage === null — без фільтра за групою (для ручних рішень)
+    const claimantsFor = (slot, stage) => Object.keys(scores)
+      .filter(pid => stage === null || stageOf(pid) === stage)
+      .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
+                     session.claims[pid].includes(slot.itemId))
+      .filter(pid => !(wonItem[pid] && wonItem[pid].has(slot.itemId)))
+      .map(pid => ({ playerId: pid, priority: scores[pid]
+        + (hasClassBonus(slot.item, pid) ? settings.pClass : 0)
+        - settings.kPenalty * loadOf(pid)
+        - settings.wWon * (wonCount[pid] || 0) }))
+      .sort((a, b) => b.priority - a.priority);
+
+    // ТЗ §5.7 крок 0: ручні рішення офіцера — поза чергою етапів і поза обмеженнями
+    for (const slot of slots) {
+      const manualWinner = overrides && overrides[slot.key];
+      if (!manualWinner || !playersById[manualWinner] ||
+          scores[manualWinner] === undefined) continue;
+      slot.candidates = claimantsFor(slot, null);
+      const c = slot.candidates.find(x => x.playerId === manualWinner);
+      slot.winnerId = manualWinner; slot.manual = true;
+      slot.priority = c ? c.priority : null;
+      take(slot.itemId, manualWinner);
+    }
+
+    // ТЗ §5.7 кроки 1-2: етап першої групи по всій здобичі, далі друга група по залишках
+    for (const stage of [1, 2]) {
+      for (const slot of slots) {
+        if (slot.winnerId) continue;
+        const cands = claimantsFor(slot, stage);
+        slot.candidates = cands;
+        if (cands.length === 0) continue;
+        const top = cands[0].priority;
+        const leaders = cands.filter(c => top - c.priority < 0.001);
+        let chosen = leaders[0];
+        if (leaders.length > 1) {
+          slot.rolled = true;
+          const memoWinner = rollMemo && rollMemo[slot.key];
+          chosen = (memoWinner && leaders.some(l => l.playerId === memoWinner))
+            ? leaders.find(l => l.playerId === memoWinner)
+            : leaders[Math.floor(rng() * leaders.length)];
+        }
+        slot.winnerId = chosen.playerId; slot.priority = chosen.priority;
+        take(slot.itemId, chosen.playerId);
+      }
+    }
+
+    const positions = slots.map(s => ({
+      key: s.key, itemId: s.itemId, copyIndex: s.copyIndex,
+      winnerId: s.winnerId, priority: s.priority, rolled: s.rolled, manual: s.manual,
+      stage: s.winnerId ? stageOf(s.winnerId) : 2,
+      classBonus: s.winnerId ? hasClassBonus(s.item, s.winnerId) : false,
+      candidates: s.candidates
+    }));
     return { positions, scores };
   }
 
@@ -456,7 +498,7 @@ const LMCore = (() => {
       if (!cls) {
         const w = CLASS_WEIGHT_HINTS[g.className.toLowerCase()] || [0.8, 0.1, 0.1];
         cls = { id: uuid(), name: g.className, wDmg: w[0], wTaken: w[1], wHeal: w[2],
-          isArchived: false };
+          group: groupForClassName(g.className), isArchived: false };
         classes.push(cls); addedClasses++;
       }
       for (const rp of g.players) {
@@ -597,7 +639,8 @@ const LMCore = (() => {
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
            computeScores, historyLoad, distribute, topContributors, formatReport,
            buildRecords, mapCatalogRarity, validateCatalog, syncCatalog,
-           parseRoster, applyRoster, isPristine };
+           parseRoster, applyRoster, isPristine,
+           groupForClassName, defaultFirstGroup };
 })();
 </script>
 
