@@ -1243,8 +1243,10 @@ function quickPickHtml(filter) {
 function renderTab2() {
   const d = draft();
   const itemsById = byId(db.items);
-  // каталог згорнутий, щойно в дропі щось є (доки офіцер не розгорне вручну)
-  const pickerOpen = ui.pickerOpen !== undefined ? ui.pickerOpen : d.drops.length === 0;
+  // v3.2.1: каталог більше не згортається сам при появі предмета в дропі —
+  // офіцер додає здобич пачками, і кожне автозгортання коштувало зайвого кліка.
+  // Закритий лише тоді, коли його закрили кліком по заголовку.
+  const pickerOpen = ui.pickerOpen !== false;
 
   const dropItems = d.drops.map(dr => itemsById[dr.itemId]).filter(Boolean);
   // ТЗ §4.3 (v1.3): заявки доступні всім активним; галочка сама позначає присутність
