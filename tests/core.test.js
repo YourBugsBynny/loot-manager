@@ -433,7 +433,7 @@ test('formatReport v4.3: «усі разом» — звіт без заголо�
     positions, itemsById: ITBYID, playersById: PBYID, classesById: CLSBYID,
     topSet: new Set(), lang: 'ru', firstGroup: 'ALL' });
   assert.ok(!/ЭТАП/.test(text), 'заголовків етапів бути не має:\n' + text);
-  assert.ok(/🔹 Скриня \(1 шт\.\) — @Chip \[МДД\]/.test(text), text);
+  assert.ok(/🔹 Скриня \(1 шт\.\) — 1\. Chip/.test(text), text);
 });
 test('distribute: override віддає предмет гравцю іншої групи, stage — за його групою', () => {
   const ctx = stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
@@ -474,10 +474,10 @@ test('formatReport: дефолт без lang — російська, побай�
     '📜 [АЛЬЯНС: Alpha] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (PvP-Івент)\n' +
     '\n' +
     '▸ ЭТАП 1 — Танки и лекари\n' +
-    '🔹 Меч Дракона (1 шт.) — @Нік1 [Танк | ТОП Вклад]\n' +
-    '🔹 Посох Сили (2 шт.) — @Нік2 [Маг], @Нік3 [Маг]\n' +
-    '🔹 Кольчуга Гвардійця (1 шт.) — @Нік4 [МДД]\n' +
-    '🔹 Сундук Ресурсів (3 шт.) — @Нік5 [Хіл], @Нік6 [РДД], [Свободный остаток]\n' +
+    '🔹 Меч Дракона (1 шт.) — 1. Нік1 [TOP]\n' +
+    '🔹 Посох Сили (2 шт.) — 1. Нік2 2. Нік3\n' +
+    '🔹 Кольчуга Гвардійця (1 шт.) — 1. Нік4\n' +
+    '🔹 Сундук Ресурсів (3 шт.) — 1. Нік5 2. Нік6, [Свободный остаток]\n' +
     '\n' +
     'Спасибо всем за участие! Предметы ждут в магазине альянса.');
 });
@@ -504,9 +504,9 @@ test('formatReport v3: дві секції етапів у порядку сеа
     topSet: new Set(['p-a']), lang: 'ru', firstGroup: 'A' });
   const lines = text.split('\n').filter(Boolean);
   assert.strictEqual(lines[1], '▸ ЭТАП 1 — Танки и лекари');
-  assert.strictEqual(lines[2], '🔹 Меч (1 шт.) — @Andriy [Танк | ТОП Вклад]');
+  assert.strictEqual(lines[2], '🔹 Меч (1 шт.) — 1. Andriy [TOP]');
   assert.strictEqual(lines[3], '▸ ЭТАП 2 — ДД');
-  assert.strictEqual(lines[4], '🔹 Скриня (2 шт.) — @Chip [МДД], [Свободный остаток]');
+  assert.strictEqual(lines[4], '🔹 Скриня (2 шт.) — 1. Chip, [Свободный остаток]');
 });
 test('formatReport v3: вечірній порядок міняє підписи етапів місцями', () => {
   const positions = [
@@ -569,7 +569,7 @@ test('formatReport: російська — побайтово', () => {
     '📜 [АЛЬЯНС: Alpha] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (PvP)\n' +
     '\n' +
     '▸ ЭТАП 1 — Танки и лекари\n' +
-    '🔹 Скриня (2 шт.) — @Andriy [Танк | ТОП Вклад], [Свободный остаток]\n' +
+    '🔹 Скриня (2 шт.) — 1. Andriy [TOP], [Свободный остаток]\n' +
     '\n' +
     'Спасибо всем за участие! Предметы ждут в магазине альянса.');
 });
@@ -585,7 +585,7 @@ test('formatReport: англійська — побайтово', () => {
     '📜 [ALLIANCE: Alpha] LOOT DISTRIBUTION (PvP)\n' +
     '\n' +
     '▸ STAGE 1 — Tanks & healers\n' +
-    '🔹 Скриня (2 pcs) — @Andriy [Танк | TOP Contribution], [Unclaimed]\n' +
+    '🔹 Скриня (2 pcs) — 1. Andriy [TOP], [Unclaimed]\n' +
     '\n' +
     'Thanks everyone for participating! Items are waiting in the alliance shop.');
 });

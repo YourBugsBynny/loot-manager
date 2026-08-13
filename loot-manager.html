@@ -648,12 +648,12 @@ const LMCore = (() => {
   // v1.2: фіксовані рядки звіту — російська (дефолт) та англійська
   const REPORT_I18N = Object.freeze({
     ru: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (' + e + ')',
-          pcs: 'шт.', top: 'ТОП Вклад', free: '[Свободный остаток]',
+          pcs: 'шт.', top: 'TOP', free: '[Свободный остаток]',
           stage: (n, who) => '▸ ЭТАП ' + n + ' — ' + who,
           groupA: 'Танки и лекари', groupB: 'ДД',
           footer: 'Спасибо всем за участие! Предметы ждут в магазине альянса.' },
     en: { header: (a, e) => '📜 [ALLIANCE: ' + a + '] LOOT DISTRIBUTION (' + e + ')',
-          pcs: 'pcs', top: 'TOP Contribution', free: '[Unclaimed]',
+          pcs: 'pcs', top: 'TOP', free: '[Unclaimed]',
           stage: (n, who) => '▸ STAGE ' + n + ' — ' + who,
           groupA: 'Tanks & healers', groupB: 'DPS',
           footer: 'Thanks everyone for participating! Items are waiting in the alliance shop.' }
@@ -691,21 +691,20 @@ const LMCore = (() => {
       for (const itemId of byItem) {
         const item = itemsById[itemId];
         const posList = groups.get(itemId);
+        // v4.4.0: нумерований список ніків без класу; [TOP] — якщо предмет пішов
+        // гравцю як позначеному ТОП. Клас офіцеру в чаті не потрібен — його видно в грі.
         const entries = [];
         let freeCount = 0;
         for (const pos of posList) {
           if (!pos.winnerId) { freeCount++; continue; }
           const player = playersById[pos.winnerId];
-          const cls = player && classesById[player.classId];
           const nick = player ? player.nickname : '?';
-          const clsName = cls ? cls.name : '?';
-          const topMark = topSet.has(pos.winnerId) ? ' | ' + L.top : '';
-          entries.push('@' + nick + ' [' + clsName + topMark + ']');
+          const topMark = topSet.has(pos.winnerId) ? ' [' + L.top + ']' : '';
+          entries.push((entries.length + 1) + '. ' + nick + topMark);
         }
-        if (freeCount > 0) entries.push(L.free);
         const displayName = itemNamesForChat(item, lang);
         out.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
-          entries.join(', '));
+          entries.join(' ') + (freeCount > 0 ? (entries.length ? ', ' : '') + L.free : ''));
       }
       return out;
     };
