@@ -590,6 +590,18 @@ const LMCore = (() => {
           footer: 'Thanks everyone for participating! Items are waiting in the alliance shop.' }
   });
 
+  // v3.0.0: у чат ідуть обидві назви предмета — мовою інтерфейсу першою, далі друга через «/».
+  // Гравці сидять у клієнтах різних мов, і одна назва не дає їм зрозуміти, про що йдеться.
+  function itemNamesForChat(item, lang) {
+    if (!item) return '?';
+    const ru = item.name || '';
+    const en = item.nameEn || '';
+    const primary = (lang === 'en' && en) ? en : ru;
+    const other = (lang === 'en' && en) ? ru : en;
+    if (!other || other === primary) return primary || other || '?';
+    return primary + ' / ' + other;
+  }
+
   // ТЗ §6 (v3.0.0): дві секції етапів; рядок на предмет усередині секції;
   // кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
   function formatReport({ allianceName, eventTypeName, positions, itemsById,
@@ -621,7 +633,7 @@ const LMCore = (() => {
           entries.push('@' + nick + ' [' + clsName + topMark + ']');
         }
         if (freeCount > 0) entries.push(L.free);
-        const displayName = item ? ((lang === 'en' && item.nameEn) ? item.nameEn : item.name) : '?';
+        const displayName = itemNamesForChat(item, lang);
         out.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
           entries.join(', '));
       }

@@ -565,17 +565,33 @@ test('syncCatalog: оновлює за catalogUid, усиновлює за на�
   LMCore.syncCatalog(items, cat2);
   assert.strictEqual(items.find(i => i.catalogUid === 1).name, 'Гидра (нова)');
 });
-test('formatReport: en використовує nameEn, ru — name', () => {
+test('formatReport v3: обидві назви предмета, мова інтерфейсу першою', () => {
   const itemsById = { x: { id: 'x', name: 'Гидра', nameEn: 'Hydra', category: 'Інше',
     targetClasses: [], rarity: 'epic', isArchived: false } };
   const pos = [{ key: 'x#0', itemId: 'x', copyIndex: 0, winnerId: 'p-a', priority: 0,
-    rolled: false, manual: false, classBonus: false, candidates: [] }];
+    rolled: false, manual: false, stage: 1, classBonus: false, candidates: [] }];
   const en = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X', positions: pos,
     itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set(), lang: 'en' });
-  assert.ok(en.includes('🔹 Hydra (1 pcs)'));
+  assert.ok(en.includes('🔹 Hydra / Гидра (1 pcs)'), en);
   const ru = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X', positions: pos,
     itemsById, playersById: PBYID, classesById: CLSBYID, topSet: new Set(), lang: 'ru' });
-  assert.ok(ru.includes('🔹 Гидра (1 шт.)'));
+  assert.ok(ru.includes('🔹 Гидра / Hydra (1 шт.)'), ru);
+});
+test('formatReport v3: без англійської назви — один рядок без роздільника', () => {
+  const itemsById = {
+    x: { id: 'x', name: 'Сундук', nameEn: '', category: 'Інше',
+         targetClasses: [], rarity: 'common', isArchived: false },
+    y: { id: 'y', name: 'Amulet', nameEn: 'Amulet', category: 'Інше',
+         targetClasses: [], rarity: 'common', isArchived: false }
+  };
+  const mk = id => ({ key: id + '#0', itemId: id, copyIndex: 0, winnerId: 'p-a', priority: 0,
+    rolled: false, manual: false, stage: 1, classBonus: false, candidates: [] });
+  const text = LMCore.formatReport({ allianceName: 'A', eventTypeName: 'X',
+    positions: [mk('x'), mk('y')], itemsById, playersById: PBYID, classesById: CLSBYID,
+    topSet: new Set(), lang: 'ru' });
+  assert.ok(text.includes('🔹 Сундук (1 шт.)'), text);          // немає nameEn
+  assert.ok(text.includes('🔹 Amulet (1 шт.)'), text);          // назви збігаються
+  assert.ok(!/Amulet \/ Amulet/.test(text), text);
 });
 
 // ---- Імпорт складу з тексту (v1.5) ----
