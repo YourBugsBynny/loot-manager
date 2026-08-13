@@ -105,10 +105,13 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
   border-radius: 4px; margin-right: 4px; }
 .tile-label .item-ico { margin-right: 0; }
 
-/* Колонкова розкладка: картки різної висоти (горизонтальні герби і вертикальні
-   скрині) течуть по колонках без порожнеч, які лишала гнучка сітка. */
-.tile-grid { columns: 220px; column-gap: 8px; margin-top: 6px; }
-.tile { display: block; width: 100%; margin: 0 0 8px; break-inside: avoid;
+/* v3.1.0: сітка, що читається рядками. Раніше тут були CSS-колонки (masonry) — вони
+   рятували від порожнеч між картками різної висоти, але заповнюються згори донизу
+   по стовпчиках, через що заданий порядок ярусів (PICKER_ORDER) розповзався між
+   колонками. align-items:start лишає кожній плитці натуральну висоту. */
+.tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px; align-items: start; margin-top: 6px; }
+.tile { display: block; width: 100%; margin: 0;
   border: 1px solid var(--line); border-radius: 10px; background: var(--card);
   padding: 0; cursor: pointer; overflow: hidden; text-align: center; }
 .tile:hover, .tile:focus-visible { border-color: var(--accent); }
@@ -1138,12 +1141,29 @@ function invalidateCalc() {  // будь-яка зміна вхідних дан
   d.overrides = {}; d.rollMemo = {};
 }
 
+// v3.1.0: ручний порядок плиток у пікері (числа — catalogUid).
+// Чому не за рідкістю: каталог ставить УСІМ істотам rarity 4 «Уник.» — і фіолетовим
+// унікальним, і синім оркам, — а всім скриням rarity 3 «Эпич.». Тобто справжніх
+// ігрових ярусів у даних немає, порядок заданий офіцером за скріншотами з гри.
+// Предмет, якого тут немає (створений вручну чи новий у каталозі), йде в кінець.
+const PICKER_ORDER = [
+  1, 7, 2, 8,       // фіолетові унікальні
+  3, 4, 5, 6,       // прості фіолетові
+  9, 10, 11, 12,    // сині
+  15, 14, 13        // скрині: III → II → I
+];
+function pickerRank(item) {
+  const i = item.catalogUid ? PICKER_ORDER.indexOf(item.catalogUid) : -1;
+  return i < 0 ? PICKER_ORDER.length : i;
+}
+
 // v1.6: плитковий пікер — картки предметів (cards/<uid>_<мова>.jpg) або чип-фолбек
 function quickPickHtml(filter) {
   const f = (filter || '').trim().toLowerCase();
   const pool = db.items.filter(i => !i.isArchived &&
     (!f || i.name.toLowerCase().includes(f) ||
-     (i.nameEn && i.nameEn.toLowerCase().includes(f))));
+     (i.nameEn && i.nameEn.toLowerCase().includes(f))))
+    .sort((a, b) => pickerRank(a) - pickerRank(b));   // стабільне: решта — в порядку каталогу
   if (db.items.filter(i => !i.isArchived).length === 0) return '';
   const shown = pool.slice(0, 24);
   const tiles = shown.map(i => {
