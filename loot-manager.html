@@ -431,13 +431,15 @@ const LMCore = (() => {
         rank: (itemsById[d.itemId] && RARITY_RANK[itemsById[d.itemId].rarity]) || 0 }))
       .sort((a, b) => b.rank - a.rank || a.idx - b.idx);
     // v3.0.0: порядок етапів задає офіцер у чернетці сеансу (ранок / вечір)
+    // v4.3.0: 'ALL' — без поділу на етапи, уся здобич розігрується одним проходом
+    const single = session.firstGroup === 'ALL';
     const firstGroup = session.firstGroup === 'B' ? 'B' : 'A';
     const groupOf = pid => {
       const p = playersById[pid];
       const c = p && classesById[p.classId];
       return c && c.group === 'A' ? 'A' : 'B';
     };
-    const stageOf = pid => (groupOf(pid) === firstGroup ? 1 : 2);
+    const stageOf = pid => (single || groupOf(pid) === firstGroup) ? 1 : 2;
 
     const wonSeq = {};     // pid → порядок його виграшу в цьому івенті (відсуває в кінець)
     const wonItem = {};    // pid → Set(itemId): правило «одна штука предмета на гравця»
@@ -486,8 +488,9 @@ const LMCore = (() => {
       take(slot.itemId, manualWinner);
     }
 
-    // ТЗ §5.7 кроки 1-2: етап першої групи по всій здобичі, далі друга група по залишках
-    for (const stage of [1, 2]) {
+    // ТЗ §5.7 кроки 1-2: етап першої групи по всій здобичі, далі друга група по залишках.
+    // У режимі «усі разом» прохід один, без фільтра за групою класу (stage === null).
+    for (const stage of (single ? [null] : [1, 2])) {
       for (const slot of slots) {
         if (slot.winnerId) continue;
         const cands = claimantsFor(slot, stage);
@@ -512,7 +515,7 @@ const LMCore = (() => {
       key: s.key, itemId: s.itemId, copyIndex: s.copyIndex,
       winnerId: s.winnerId, lastAt: s.lastAt, top: s.top,
       rolled: s.rolled, manual: s.manual,
-      stage: s.winnerId ? stageOf(s.winnerId) : 2,
+      stage: s.winnerId ? stageOf(s.winnerId) : (single ? 1 : 2),
       candidates: s.candidates
     }));
     return { positions };
@@ -673,6 +676,7 @@ const LMCore = (() => {
   function formatReport({ allianceName, eventTypeName, positions, itemsById,
                           playersById, classesById, topSet, lang, firstGroup }) {
     const L = REPORT_I18N[lang] || REPORT_I18N.ru;
+    const single = firstGroup === 'ALL';
     const first = firstGroup === 'B' ? 'B' : 'A';
     const groupName = g => (g === 'A' ? L.groupA : L.groupB);
     const linesFor = stage => {
@@ -706,11 +710,16 @@ const LMCore = (() => {
       return out;
     };
     const blocks = [];
-    for (const stage of [1, 2]) {
-      const lines = linesFor(stage);
-      if (lines.length === 0) continue;
-      const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
-      blocks.push(L.stage(stage, groupName(g)) + '\n' + lines.join('\n'));
+    if (single) {                      // без поділу на етапи — суцільний список
+      const lines = linesFor(1);
+      if (lines.length > 0) blocks.push(lines.join('\n'));
+    } else {
+      for (const stage of [1, 2]) {
+        const lines = linesFor(stage);
+        if (lines.length === 0) continue;
+        const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
+        blocks.push(L.stage(stage, groupName(g)) + '\n' + lines.join('\n'));
+      }
     }
     return L.header(allianceName, eventTypeName) + '\n\n' +
       blocks.join('\n\n') + '\n\n' + L.footer;
@@ -774,7 +783,8 @@ const I18N = {
       ' Сделайте экспорт JSON во вкладке 4!',
     eventH2: 'Событие', eventPh: 'Тип события (напр., Вторжение монстров)',
     orderLabel: 'Порядок этапов:', orderMorning: 'Утро: сначала танки и лекари',
-    orderEvening: 'Вечер: сначала ДД', clearTop: 'Снять все ТОП',
+    orderEvening: 'Вечер: сначала ДД', orderAll: 'Все сразу',
+    clearTop: 'Снять все ТОП',
     topCount: 'ТОП', stageHead: n => 'Этап ' + n,
     groupA: 'Танки и лекари', groupB: 'ДД', thGroup: 'Группа',
     presenceH2: 'Состав и ТОП вклад',
@@ -874,7 +884,8 @@ const I18N = {
     saveFail: m => 'Failed to save (storage full?): ' + m + ' Export JSON on tab 4!',
     eventH2: 'Event', eventPh: 'Event type (e.g., Monster Invasion)',
     orderLabel: 'Stage order:', orderMorning: 'Morning: tanks & healers first',
-    orderEvening: 'Evening: DPS first', clearTop: 'Clear all TOP',
+    orderEvening: 'Evening: DPS first', orderAll: 'Everyone at once',
+    clearTop: 'Clear all TOP',
     topCount: 'TOP', stageHead: n => 'Stage ' + n,
     groupA: 'Tanks & healers', groupB: 'DPS', thGroup: 'Group',
     presenceH2: 'Roster & TOP contribution',
@@ -1063,7 +1074,7 @@ function draft() {
   const d = data.draftSession;
   if (!d.overrides) d.overrides = {};
   if (!d.rollMemo) d.rollMemo = {};
-  if (d.firstGroup !== 'A' && d.firstGroup !== 'B') {
+  if (!['A', 'B', 'ALL'].includes(d.firstGroup)) {
     d.firstGroup = LMCore.defaultFirstGroup(new Date().getHours());
   }
   return d;
@@ -1162,9 +1173,11 @@ function renderTab1() {
       '<div class="row" style="margin-top:8px">' +
         '<span class="muted small">' + t('orderLabel') + '</span>' +
         '<label class="inline"><input type="radio" name="firstGroup" value="A"' +
-          (d.firstGroup !== 'B' ? ' checked' : '') + '> ' + t('orderMorning') + '</label>' +
+          (d.firstGroup === 'A' ? ' checked' : '') + '> ' + t('orderMorning') + '</label>' +
         '<label class="inline"><input type="radio" name="firstGroup" value="B"' +
           (d.firstGroup === 'B' ? ' checked' : '') + '> ' + t('orderEvening') + '</label>' +
+        '<label class="inline"><input type="radio" name="firstGroup" value="ALL"' +
+          (d.firstGroup === 'ALL' ? ' checked' : '') + '> ' + t('orderAll') + '</label>' +
       '</div>' +
     '</div>' +
     '<div class="card">' +
@@ -1578,13 +1591,15 @@ function renderTab3() {
     // v3.0.0: позиції згруповані у два етапи в порядку, заданому на вкладці 1
     const first = d.firstGroup === 'B' ? 'B' : 'A';
     const groupLabel = g => (g === 'A' ? t('groupA') : t('groupB'));
-    const rows = [1, 2].map(stage => {
-      const list = positions.filter(p => (p.stage === 1 ? 1 : 2) === stage);
-      if (list.length === 0) return '';
-      const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
-      return '<h3 class="stage-head">' + t('stageHead', stage) + ' — ' +
-        escapeHtml(groupLabel(g)) + '</h3>' + list.map(rowHtml).join('');
-    }).join('');
+    const rows = d.firstGroup === 'ALL'
+      ? positions.map(rowHtml).join('')
+      : [1, 2].map(stage => {
+          const list = positions.filter(p => (p.stage === 1 ? 1 : 2) === stage);
+          if (list.length === 0) return '';
+          const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
+          return '<h3 class="stage-head">' + t('stageHead', stage) + ' — ' +
+            escapeHtml(groupLabel(g)) + '</h3>' + list.map(rowHtml).join('');
+        }).join('');
     const reportText = LMCore.formatReport({
       allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || t('defaultEvent'),
       positions, itemsById, playersById, classesById: byId(db.classes), topSet,

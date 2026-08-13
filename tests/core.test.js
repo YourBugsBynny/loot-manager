@@ -357,6 +357,7 @@ test('distribute: override — ручний переможець поза пре
 const stageCtx = session => ({ session, playersById: PBYID, classesById: CLSBYID,
   itemsById: ITBYID, history: [], settings: S, nowISO: NOW, rng: rngZero,
   overrides: {}, rollMemo: {} });
+const stageCtx2 = (session, history) => ({ ...stageCtx(session), history });
 
 test('distribute: етап 1 (танки/лекарі) забирає предмет, ДД дістається залишок', () => {
   const { positions } = LMCore.distribute(stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
@@ -399,6 +400,40 @@ test('distribute: wWon діє наскрізно всередині етапу',
   assert.strictEqual(positions[1].winnerId, 'p-b');   // скриня: p-a 50−50=0 проти p-b 50
   assert.strictEqual(positions[1].rolled, false);
   assert.deepStrictEqual(positions.map(p => p.stage), [1, 1]);
+});
+test('distribute v4.3: режим «усі разом» — етапів немає, черга спільна', () => {
+  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1),   // танк брав учора
+                mkRec('p-b', 'i-box',   '2026-08-09T00:00:00.000Z', 1)];  // хіл — позавчора
+  // p-c (ДД) не отримував ніколи — у режимі «усі разом» він перший попри іншу групу
+  const { positions } = LMCore.distribute(stageCtx2({ eventTypeName: 'Бос',
+    firstGroup: 'ALL', presence: {},
+    drops: [{ itemId: 'i-staff', quantity: 3 }],
+    claims: { 'p-a': ['i-staff'], 'p-b': ['i-staff'], 'p-c': ['i-staff'] } }, hist));
+  assert.deepStrictEqual(positions.map(p => p.winnerId), ['p-c', 'p-b', 'p-a']);
+  assert.deepStrictEqual(positions.map(p => p.stage), [1, 1, 1],
+    'усі позиції в одному етапі');
+});
+test('distribute v4.3: «усі разом» проти двох етапів на тих самих даних', () => {
+  const session = { eventTypeName: 'Бос', presence: {},
+    drops: [{ itemId: 'i-staff', quantity: 1 }],
+    claims: { 'p-c': ['i-staff'] } };                       // хоче лише ДД
+  const staged = LMCore.distribute(stageCtx({ ...session, firstGroup: 'A' }));
+  assert.strictEqual(staged.positions[0].winnerId, 'p-c');
+  assert.strictEqual(staged.positions[0].stage, 2, 'у двох етапах ДД бере в другому');
+  const all = LMCore.distribute(stageCtx({ ...session, firstGroup: 'ALL' }));
+  assert.strictEqual(all.positions[0].winnerId, 'p-c');
+  assert.strictEqual(all.positions[0].stage, 1, 'у режимі «усі разом» етап завжди 1');
+});
+test('formatReport v4.3: «усі разом» — звіт без заголовків етапів', () => {
+  const positions = [
+    { key: 'i-box#0', itemId: 'i-box', copyIndex: 0, winnerId: 'p-c', stage: 1,
+      lastAt: null, top: false, rolled: false, manual: false, candidates: [] }
+  ];
+  const text = LMCore.formatReport({ allianceName: 'СПАРТА', eventTypeName: 'Бос',
+    positions, itemsById: ITBYID, playersById: PBYID, classesById: CLSBYID,
+    topSet: new Set(), lang: 'ru', firstGroup: 'ALL' });
+  assert.ok(!/ЭТАП/.test(text), 'заголовків етапів бути не має:\n' + text);
+  assert.ok(/🔹 Скриня \(1 шт\.\) — @Chip \[МДД\]/.test(text), text);
 });
 test('distribute: override віддає предмет гравцю іншої групи, stage — за його групою', () => {
   const ctx = stageCtx({ eventTypeName: 'Бос', firstGroup: 'A',
