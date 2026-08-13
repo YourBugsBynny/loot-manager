@@ -114,7 +114,9 @@ test('перелік мов збігається з реалізацією', () 
 // ---- 8. Словники i18n симетричні (документ вимагає однакових ключів) ----
 test('ключі I18N.ru та I18N.en збігаються', () => {
   const html = fs.readFileSync(path.join(ROOT, 'loot-manager.html'), 'utf8');
-  const m = html.match(/const I18N = \{\n  ru: \{([\s\S]*?)\n  \},\n  en: \{([\s\S]*?)\n  \}\n\};/);
+  // \r? — робоча копія може бути з CRLF: git переписує переклади рядків при checkout
+  const m = html.match(
+    /const I18N = \{\r?\n  ru: \{([\s\S]*?)\r?\n  \},\r?\n  en: \{([\s\S]*?)\r?\n  \}\r?\n\};/);
   assert.ok(m, 'блок I18N не розпізнано');
   const keys = b => new Set([...b.matchAll(/(?:^\s*|[,{]\s+)([a-zA-Z]\w*):/gm)].map(x => x[1]));
   const ru = keys(m[1]), en = keys(m[2]);
