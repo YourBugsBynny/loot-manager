@@ -653,6 +653,41 @@ test('applyRoster: створює класи з розумними вагами,
     { ap: 0, up: 7, ac: 0 });
   assert.strictEqual(players.length, 7);
 });
+test('applyRoster v3.2: replaceRoster вибуває тих, кого немає в списку', () => {
+  const players = [
+    { id: 'p-gone', nickname: 'Ghost', classId: 'c-x', role: 'Ветеран', isActive: true,
+      level: 60, createdAt: NOW },
+    { id: 'p-back', nickname: 'bunny', classId: 'c-x', role: 'Офіцер', isActive: false,
+      level: 60, createdAt: NOW }
+  ];
+  const classes = [mkClass('c-x', 'Стара', 0.5, 0.5, 0)];
+  const parsed = LMCore.parseRoster(ROSTER_TEXT);
+  const res = LMCore.applyRoster(players, classes, parsed.groups, NOW,
+    { replaceRoster: true });
+  assert.strictEqual(res.deactivated, 1);
+  const ghost = players.find(p => p.id === 'p-gone');
+  assert.strictEqual(ghost.isActive, false, 'кого немає в списку — вибув');
+  assert.strictEqual(ghost.role, 'Ветеран', 'роль не чіпається');
+  assert.strictEqual(ghost.nickname, 'Ghost', 'гравець не видаляється — лише деактивується');
+  const back = players.find(p => p.id === 'p-back');
+  assert.strictEqual(back.isActive, true, 'хто повернувся у список — знову активний');
+  assert.strictEqual(back.role, 'Офіцер', 'роль не чіпається');
+  // повторний імпорт того самого списку більше нікого не вибуває
+  const again = LMCore.applyRoster(players, classes, parsed.groups, NOW,
+    { replaceRoster: true });
+  assert.strictEqual(again.deactivated, 0);
+});
+test('applyRoster v3.2: без replaceRoster поведінка стара — нікого не вибуває', () => {
+  const players = [
+    { id: 'p-gone', nickname: 'Ghost', classId: 'c-x', role: 'Учасник', isActive: true,
+      level: 60, createdAt: NOW }
+  ];
+  const classes = [mkClass('c-x', 'Стара', 0.5, 0.5, 0)];
+  const parsed = LMCore.parseRoster(ROSTER_TEXT);
+  const res = LMCore.applyRoster(players, classes, parsed.groups, NOW);
+  assert.strictEqual(res.deactivated, 0);
+  assert.strictEqual(players.find(p => p.id === 'p-gone').isActive, true);
+});
 test('applyRoster: Жрец отримує хільські ваги', () => {
   const classes = [];
   LMCore.applyRoster([], classes,
