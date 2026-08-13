@@ -41,6 +41,18 @@ header.appbar {
   display: flex; gap: 8px; align-items: center; padding: 10px 12px;
 }
 header.appbar .brand { font-weight: 700; white-space: nowrap; }
+/* v3.3.0: мова перемикається одним кліком по прапорцю, а не через випадний список */
+.lang-switch { display: flex; gap: 4px; flex: 0 0 auto; }
+.lang-btn { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  padding: 4px 7px; font-size: 0.8rem; font-weight: 600; color: var(--muted);
+  line-height: 1; opacity: .55; }
+.lang-btn svg { width: 22px; height: 11px; display: block; border-radius: 2px;
+  outline: 1px solid rgba(0,0,0,.18); outline-offset: -1px; }
+.lang-btn:hover { border-color: var(--accent); opacity: .85; }
+.lang-btn.active { opacity: 1; color: var(--ink); border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent); cursor: default; }
+@media (max-width: 480px) { .lang-btn span { display: none; } }
 header.appbar select { flex: 1; min-width: 0; max-width: 320px; }
 nav.tabs {
   position: sticky; top: 49px; z-index: 19; background: var(--card);
@@ -222,7 +234,7 @@ details.sect > .sect-body { padding: 0 13px 13px; }
 <header class="appbar">
   <span class="brand">🎁 Loot Manager</span>
   <select id="allianceSelect" title="Активний альянс"></select>
-  <select id="langSelect" title="Язык / Language"></select>
+  <div id="langSwitch" class="lang-switch" role="group" aria-label="Язык / Language"></div>
   <button id="btnSettings" class="btn" title="Бази та налаштування">⚙️</button>
 </header>
 
@@ -936,6 +948,21 @@ const I18N = {
   }
 };
 const LANG_NAMES = { ru: 'Русский', en: 'English' };
+// v3.3.0: прапорці вбудованим SVG, а не емодзі — Windows не має гліфів прапорців
+// і показує замість них дві літери («RU», «GB»).
+const LANG_FLAGS = {
+  ru: '<svg viewBox="0 0 60 30" aria-hidden="true">' +
+        '<rect width="60" height="10" fill="#fff"/>' +
+        '<rect y="10" width="60" height="10" fill="#0039a6"/>' +
+        '<rect y="20" width="60" height="10" fill="#d52b1e"/></svg>',
+  en: '<svg viewBox="0 0 60 30" aria-hidden="true">' +
+        '<clipPath id="ukjack"><path d="M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z"/></clipPath>' +
+        '<rect width="60" height="30" fill="#012169"/>' +
+        '<path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/>' +
+        '<path d="M0,0 L60,30 M60,0 L0,30" clip-path="url(#ukjack)" stroke="#c8102e" stroke-width="4"/>' +
+        '<path d="M30,0 v30 M0,15 h60" stroke="#fff" stroke-width="10"/>' +
+        '<path d="M30,0 v30 M0,15 h60" stroke="#c8102e" stroke-width="6"/></svg>'
+};
 function lang() { return (db && db.settings && db.settings.language) || 'ru'; }
 function t(key, ...args) {
   const v = (I18N[lang()] && I18N[lang()][key]) !== undefined
@@ -1030,10 +1057,11 @@ function renderHeader() {
     '<option value="' + a.id + '"' + (a.id === db.activeAllianceId ? ' selected' : '') + '>' +
     escapeHtml(a.name) + '</option>').join('');
   sel.title = t('allianceTitle');
-  const ls = document.getElementById('langSelect');
-  ls.innerHTML = Object.keys(LANG_NAMES).map(code =>
-    '<option value="' + code + '"' + (code === lang() ? ' selected' : '') + '>' +
-    code.toUpperCase() + '</option>').join('');
+  document.getElementById('langSwitch').innerHTML = Object.keys(LANG_NAMES).map(code =>
+    '<button type="button" class="lang-btn' + (code === lang() ? ' active' : '') +
+      '" data-lang="' + code + '" title="' + LANG_NAMES[code] + '"' +
+      (code === lang() ? ' aria-current="true"' : '') + '>' +
+      LANG_FLAGS[code] + '<span>' + code.toUpperCase() + '</span></button>').join('');
   document.documentElement.lang = lang();
   document.getElementById('btnSettings').title = t('tab4');
   document.querySelectorAll('nav.tabs .tab').forEach(b => {
@@ -2208,8 +2236,10 @@ document.addEventListener('DOMContentLoaded', () => {
     db.activeAllianceId = e.target.value;
     save(); renderAll();
   });
-  document.getElementById('langSelect').addEventListener('change', e => {
-    db.settings.language = e.target.value;
+  document.getElementById('langSwitch').addEventListener('click', e => {
+    const btn = e.target.closest('.lang-btn');
+    if (!btn || btn.dataset.lang === lang()) return;   // клік по активній мові — не робота
+    db.settings.language = btn.dataset.lang;
     save(); renderAll();
   });
   document.getElementById('btnSettings').addEventListener('click', () => switchTab(4));
