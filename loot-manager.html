@@ -104,6 +104,13 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .item-ico { width: 22px; height: 22px; object-fit: contain; vertical-align: -5px;
   border-radius: 4px; margin-right: 4px; }
 .tile-label .item-ico { margin-right: 0; }
+/* v3.1.1: іконка, вирізана з картки предмета (коли в каталозі немає icon).
+   scale(0.25) зводить квадрат 88px до 22px, translate у масштабованих координатах
+   зсуває на відступ 8px — так у віконце потрапляє рівно ігрова іконка. */
+.item-ico-card { display: inline-block; position: relative; overflow: hidden;
+  border-radius: 4px; background: var(--line); }
+.item-ico-card img { position: absolute; top: 0; left: 0; max-width: none;
+  transform-origin: 0 0; transform: scale(0.25) translate(-8px, -8px); }
 
 /* v3.1.0: сітка, що читається рядками. Раніше тут були CSS-колонки (masonry) — вони
    рятували від порожнеч між картками різної висоти, але заповнюються згори донизу
@@ -159,21 +166,32 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 
 @media (max-width: 699px) { header.appbar .brand { display: none; } }
 
-/* Смужка предметів дропу = і список здобичі, і перемикач заявок (v2.1) */
-.item-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
-.item-tab { display: inline-flex; align-items: center; gap: 6px;
+/* Смужка предметів дропу = і список здобичі, і перемикач заявок (v2.1).
+   v3.1.1: сітка рівних колонок замість flex-wrap — чипи різної ширини й висоти
+   давали рвані ряди («ялинку»). Колонки вирівняні, висота однакова в межах ряду,
+   min-height тримає однорядкові назви на висоті дворядкових. */
+.item-tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 6px; margin: 2px 0 10px; align-items: stretch; }
+.item-tab { display: flex; align-items: center; gap: 4px; min-height: 56px;
   border: 1px solid var(--line); border-radius: 10px; background: var(--card);
   padding: 4px 8px; font-size: 0.9rem; max-width: 100%; }
 .item-tab:hover { border-color: var(--accent); }
 .item-tab.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .item-tab .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  flex: 1 1 auto; text-align: left;
   border: 0; background: none; padding: 2px; margin: 0; cursor: pointer;
   color: inherit; font: inherit; }
 /* v3.0.0: назва предмета не обрізається — офіцер мусить бачити, що саме роздає */
-.item-tab .nm { white-space: normal; overflow-wrap: anywhere; max-width: 22ch; text-align: left; }
-.item-tab .inpDropQty { width: 52px; padding: 3px 6px; }
+/* break-word, а не anywhere: anywhere рве слова посеред складу й псує розрахунок
+   ширини — «Поглощающий магию обсидиановый голем» розсипався на чотири рядки */
+.item-tab .nm { white-space: normal; overflow-wrap: break-word; text-align: left;
+  flex: 1 1 auto; min-width: 0; }
+.item-tab .cnt, .item-tab .inpDropQty, .item-tab .del { flex: 0 0 auto; }
+/* без цього довга назва чавила іконку у флексі з 22px до 11-13px */
+.item-tab .item-ico, .item-tab .dot { flex: 0 0 auto; }
+.item-tab .inpDropQty { width: 40px; padding: 3px 4px; }
 .item-tab .cnt { min-width: 20px; text-align: center; border-radius: 999px;
-  background: var(--line); color: var(--muted); font-size: 0.78rem; padding: 1px 6px;
+  background: var(--line); color: var(--muted); font-size: 0.78rem; padding: 1px 4px;
   font-variant-numeric: tabular-nums; }
 .item-tab .cnt.has { background: var(--accent); color: var(--accent-ink); }
 .item-tab .del { border: 0; background: none; color: var(--danger); cursor: pointer;
@@ -1117,11 +1135,21 @@ function rarityBadge(item) {
     : (item.rarityLabelRu || rarityLabel(item.rarity));
   return '<span class="badge ' + item.rarity + '">' + escapeHtml(label) + '</span>';
 }
+// v3.1.1: каталог має іконки не для всіх предметів (uid 10-15 йдуть із порожнім icon),
+// і замість іконки лишалась гола крапка рідкості. Запасний варіант — вирізати іконку
+// з картки предмета: у грі вона завжди в лівому верхньому куті, квадрат 88×88 з
+// відступом 8px, однаково і на горизонтальних картках істот, і на вертикальних скринях.
 function itemIcon(item) {
-  return item && item.icon
-    ? '<img class="item-ico" src="' + escapeHtml(item.icon) + '" alt="" loading="lazy" ' +
-      'onerror="this.remove()">'
-    : '';
+  if (!item) return '';
+  if (item.icon) {
+    return '<img class="item-ico" src="' + escapeHtml(item.icon) + '" alt="" loading="lazy" ' +
+      'onerror="this.remove()">';
+  }
+  if (item.catalogUid) {
+    return '<span class="item-ico item-ico-card"><img src="cards/' + item.catalogUid + '_' +
+      lang() + '.jpg" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>';
+  }
+  return '';
 }
 function itemDisplayName(item) {
   if (!item) return '?';
@@ -1168,7 +1196,7 @@ function quickPickHtml(filter) {
   const shown = pool.slice(0, 24);
   const tiles = shown.map(i => {
     const label = '<span class="tile-label">' +
-      (i.icon ? itemIcon(i) : '<span class="dot ' + i.rarity + '"></span>') +
+      (itemIcon(i) || '<span class="dot ' + i.rarity + '"></span>') +
       escapeHtml(itemDisplayName(i)) + '</span>';
     const img = i.catalogUid
       ? '<img src="cards/' + i.catalogUid + '_' + lang() + '.jpg" alt="' +
@@ -1216,7 +1244,7 @@ function renderTab2() {
       return '<div class="item-tab' + (it.id === ui.claimItemId ? ' active' : '') + '">' +
         '<button type="button" class="pick" data-iid="' + it.id + '" title="' +
           escapeHtml(itemDisplayName(it)) + '">' +
-          (it.icon ? itemIcon(it) : '<span class="dot ' + it.rarity + '"></span>') +
+          (itemIcon(it) || '<span class="dot ' + it.rarity + '"></span>') +
           '<span class="nm">' + escapeHtml(itemDisplayName(it)) + '</span>' +
           '<span class="cnt' + (n ? ' has' : '') + '">' + n + '</span>' +
         '</button>' +
