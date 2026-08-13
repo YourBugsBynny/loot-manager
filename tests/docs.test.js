@@ -88,18 +88,15 @@ test('константи алгоритму в документі збігают
   const html = fs.readFileSync(path.join(ROOT, 'loot-manager.html'), 'utf8');
   const core = html.match(/<script id="core">([\s\S]*?)<\/script>/)[1];
   const LMCore = new Function(core + '\n;return LMCore;')();
-  const m = doc.match(/`historyDays` \((\d+)\)/);
-  assert.ok(m, DOC + ': константу historyDays не знайдено в тексті');
-  assert.strictEqual(Number(m[1]), LMCore.DEFAULTS.historyDays,
-    DOC + ' каже historyDays=' + m[1] + ', у коді ' + LMCore.DEFAULTS.historyDays);
   // документ не має називати констант, яких у ядрі вже немає
-  const dead = ['scoreTop', 'scorePresent', 'pClass', 'kPenalty', 'wWon', 'rarityWeights']
-    .filter(k => doc.includes('`' + k + '`') && LMCore.DEFAULTS[k] === undefined);
+  const dead = ['scoreTop', 'scorePresent', 'pClass', 'kPenalty', 'wWon', 'rarityWeights',
+    'historyDays'].filter(k => doc.includes('`' + k + '`') && LMCore.DEFAULTS[k] === undefined);
   assert.deepStrictEqual(dead, [],
     DOC + ' називає константи, яких у ядрі немає: ' + dead.join(', '));
   const keys = Object.keys(LMCore.DEFAULTS).filter(k => k !== 'webhookUrl' && k !== 'language');
-  assert.deepStrictEqual(keys.sort(), ['historyDays', 'useTop'],
+  assert.deepStrictEqual(keys.sort(), ['useTop'],
     'набір констант алгоритму змінився — оновіть ' + DOC + ' і цей guard');
+  assert.ok(/`useTop`/.test(doc), DOC + ': константу useTop не названо');
 });
 
 // ---- 7. Мови в документі = мови в коді ----

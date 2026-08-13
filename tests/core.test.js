@@ -19,7 +19,7 @@ function test(name, fn) {
 test('LMCore існує, DEFAULTS відповідає ТЗ §3.6', () => {
   assert.ok(LMCore, 'LMCore відсутній');
   assert.deepStrictEqual(LMCore.DEFAULTS, {
-    historyDays: 14, useTop: true, webhookUrl: '', language: 'ru'
+    useTop: true, webhookUrl: '', language: 'ru'
   });
   assert.ok(Object.isFrozen(LMCore.DEFAULTS));
 });
@@ -33,7 +33,7 @@ test('uuid: формат v4 і унікальність', () => {
 const NOW = '2026-08-11T12:00:00.000Z';
 test('emptyDb: перший запуск за ТЗ §7.1', () => {
   const db = LMCore.emptyDb(NOW);
-  assert.strictEqual(db.schemaVersion, 3);
+  assert.strictEqual(db.schemaVersion, 4);
   assert.strictEqual(db.alliances.length, 1);
   assert.strictEqual(db.alliances[0].name, 'Мой альянс');
   assert.strictEqual(db.activeAllianceId, db.alliances[0].id);
@@ -72,10 +72,10 @@ test('migrate: база v1 піднімається до v2 — групи кл�
   old.settings.scoreTop = 100; old.settings.kPenalty = 10;   // мертві константи v2
   const res = LMCore.migrate(old);
   assert.strictEqual(res.ok, true);
-  assert.strictEqual(res.db.schemaVersion, 3);
+  assert.strictEqual(res.db.schemaVersion, 4);
   assert.deepStrictEqual(res.db.settings,
-    { historyDays: 14, useTop: true, webhookUrl: '', language: 'ru' },
-    'старі константи алгоритму прибрані, вікно історії збережене');
+    { useTop: true, webhookUrl: '', language: 'ru' },
+    'старі константи алгоритму прибрані');
   assert.deepStrictEqual(res.db.classes.map(c => c.name + ':' + c.group),
     ['Маг:B', 'Воин:A', 'Жрец:A', 'Разбойник:B', 'Лучник:B']);
   const d = res.db.perAlliance[aid].draftSession;
@@ -87,7 +87,7 @@ test('migrate: база v1 піднімається до v2 — групи кл�
     'історія — снапшоти минулих івентів, міграція їх не чіпає');
   assert.strictEqual(res.db.perAlliance[aid].history[0].scoreAtDistribution, 50);
 });
-test('migrate: v2 піднімається до v3 зі збереженням вікна історії', () => {
+test('migrate: v2 доїжджає до v4 — від констант лишається лише useTop', () => {
   const v2 = LMCore.emptyDb(NOW);
   v2.schemaVersion = 2;
   v2.settings = { scoreTop: 100, scorePresent: 50, pClass: 25, kPenalty: 10,
@@ -95,13 +95,13 @@ test('migrate: v2 піднімається до v3 зі збереженням �
     webhookUrl: '', language: 'en' };
   const res = LMCore.migrate(v2);
   assert.strictEqual(res.ok, true);
-  assert.strictEqual(res.db.schemaVersion, 3);
+  assert.strictEqual(res.db.schemaVersion, 4);
   assert.deepStrictEqual(res.db.settings,
-    { historyDays: 21, useTop: true, webhookUrl: '', language: 'en' });
+    { useTop: true, webhookUrl: '', language: 'en' });
 });
-test('migrate: база v3 проходить без змін, чужа версія — ні', () => {
+test('migrate: база v4 проходить без змін, чужа версія — ні', () => {
   const fresh = LMCore.emptyDb(NOW);
-  assert.strictEqual(fresh.schemaVersion, 3);
+  assert.strictEqual(fresh.schemaVersion, 4);
   assert.strictEqual(LMCore.migrate(fresh).ok, true);
   const bad = LMCore.migrate({ ...fresh, schemaVersion: 99 });
   assert.strictEqual(bad.ok, false);
@@ -188,45 +188,56 @@ function mkRec(playerId, itemId, timestamp, quantity, cancelled) {
 }
 const rngZero = () => 0;
 
-test('historyLoad v4: рахує штуки за вікно, рідкість більше не важить', () => {
+test('lastReceivedAt v4.2: дата останнього отримання, скасовані не рахуються', () => {
   const hist = [
-    mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1),        // легендарка — 1 штука
-    mkRec('p-a', 'i-box',   '2026-08-01T00:00:00.000Z', 3),        // 3 штуки
-    mkRec('p-a', 'i-staff', '2026-07-01T00:00:00.000Z', 1),        // поза вікном 14 дн
-    mkRec('p-a', 'i-staff', '2026-08-09T00:00:00.000Z', 1, true),  // cancelled
-    mkRec('p-b', 'i-sword', '2026-08-10T00:00:00.000Z', 1)         // чужий
+    mkRec('p-a', 'i-box',   '2026-08-01T00:00:00.000Z', 3),
+    mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1),        // найсвіжіший у p-a
+    mkRec('p-a', 'i-staff', '2026-08-11T00:00:00.000Z', 1, true),  // cancelled — не рахується
+    mkRec('p-b', 'i-sword', '2026-07-01T00:00:00.000Z', 1)
   ];
-  assert.strictEqual(LMCore.historyLoad(hist, 'p-a', NOW, S), 1 + 3);
-  assert.strictEqual(LMCore.historyLoad(hist, 'p-b', NOW, S), 1);
-  assert.strictEqual(LMCore.historyLoad(hist, 'p-c', NOW, S), 0);
+  assert.strictEqual(LMCore.lastReceivedAt(hist, 'p-a'),
+    Date.parse('2026-08-10T00:00:00.000Z'));
+  assert.strictEqual(LMCore.lastReceivedAt(hist, 'p-b'),
+    Date.parse('2026-07-01T00:00:00.000Z'));
+  assert.strictEqual(LMCore.lastReceivedAt(hist, 'p-c'), null, 'не отримував ніколи');
 });
 // v4.0.0: черга — спершу хто менше отримав, серед рівних ТОПи, далі рол.
 // Порівняння відбувається всередині етапу, тому претенденти тут — з групи A (танк і хіл)
-test('distribute v4: хто менше отримав, той бере першим (крит. приймання 5)', () => {
-  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
-  const session = { eventTypeName: 'Бос', presence: {},
-    drops: [{ itemId: 'i-box', quantity: 1 }],
-    claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } };
-  const { positions } = LMCore.distribute({ session, playersById: PBYID,
-    classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
-    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
-  assert.strictEqual(positions[0].winnerId, 'p-b');            // p-a має 1, p-b — 0
-  assert.strictEqual(positions[0].load, 0);
-  assert.strictEqual(positions[0].rolled, false);
-  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId + ':' + c.load),
-    ['p-b:0', 'p-a:1']);
-});
-test('distribute v4: рідкість у черзі не важить — скриня дорівнює легендарці', () => {
-  const hist = [mkRec('p-a', 'i-box', '2026-08-10T00:00:00.000Z', 1),
-                mkRec('p-b', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
+test('distribute v4.2: хто давніше отримував, той бере першим (крит. приймання 5)', () => {
+  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1),
+                mkRec('p-b', 'i-box',   '2026-08-01T00:00:00.000Z', 1)];
   const session = { eventTypeName: 'Бос', presence: {},
     drops: [{ itemId: 'i-staff', quantity: 1 }],
     claims: { 'p-a': ['i-staff'], 'p-b': ['i-staff'] } };
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
     classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
     nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
-  assert.deepStrictEqual(positions[0].candidates.map(c => c.load), [1, 1]);
-  assert.strictEqual(positions[0].rolled, true, 'обидва по одній речі — чистий рол');
+  assert.strictEqual(positions[0].winnerId, 'p-b');   // 1 серпня давніше за 10-те
+  assert.strictEqual(positions[0].lastAt, '2026-08-01T00:00:00.000Z');
+  assert.strictEqual(positions[0].rolled, false);
+  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-b', 'p-a']);
+});
+test('distribute v4.2: хто не отримував ніколи — попереду всіх', () => {
+  const hist = [mkRec('p-a', 'i-sword', '2020-01-01T00:00:00.000Z', 1)];
+  const session = { eventTypeName: 'Бос', presence: {},
+    drops: [{ itemId: 'i-staff', quantity: 1 }],
+    claims: { 'p-a': ['i-staff'], 'p-b': ['i-staff'] } };
+  const { positions } = LMCore.distribute({ session, playersById: PBYID,
+    classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
+    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
+  assert.strictEqual(positions[0].winnerId, 'p-b', 'новачок без історії — перший');
+  assert.strictEqual(positions[0].lastAt, null);
+});
+test('distribute v4.2: кількість не важить — вирішує лише дата', () => {
+  const hist = [mkRec('p-a', 'i-box', '2026-08-10T00:00:00.000Z', 5),   // взяв 5 штук
+                mkRec('p-b', 'i-box', '2026-08-10T00:00:00.000Z', 1)];  // того ж дня 1
+  const session = { eventTypeName: 'Бос', presence: {},
+    drops: [{ itemId: 'i-staff', quantity: 1 }],
+    claims: { 'p-a': ['i-staff'], 'p-b': ['i-staff'] } };
+  const { positions } = LMCore.distribute({ session, playersById: PBYID,
+    classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
+    nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
+  assert.strictEqual(positions[0].rolled, true, 'однакова дата — чистий рол');
 });
 test('distribute v4: серед рівних першим бере ТОП, і лише він', () => {
   const session = { eventTypeName: 'Бос', presence: { 'p-b': { top: true } },
@@ -242,7 +253,7 @@ test('distribute v4: серед рівних першим бере ТОП, і л
   const off = LMCore.distribute({ ...ctx, settings: { ...S, useTop: false } });
   assert.strictEqual(off.positions[0].rolled, true);
 });
-test('distribute v4.1: ТОП бере першим навіть із більшим отриманим', () => {
+test('distribute v4.1: ТОП бере першим, навіть отримавши щойно', () => {
   const hist = [mkRec('p-b', 'i-sword', '2026-08-10T00:00:00.000Z', 3)];
   const session = { eventTypeName: 'Бос', presence: { 'p-b': { top: true } },
     drops: [{ itemId: 'i-box', quantity: 1 }],
@@ -251,13 +262,14 @@ test('distribute v4.1: ТОП бере першим навіть із більш
     history: hist, settings: S, nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} };
   const r = LMCore.distribute(ctx);
   assert.strictEqual(r.positions[0].winnerId, 'p-b', 'хто тягнув івент — обирає першим');
-  assert.strictEqual(r.positions[0].load, 3);
+  assert.strictEqual(r.positions[0].lastAt, '2026-08-10T00:00:00.000Z');
   // з вимкненим useTop повертається чиста черга
   const off = LMCore.distribute({ ...ctx, settings: { ...S, useTop: false } });
   assert.strictEqual(off.positions[0].winnerId, 'p-a');
 });
-test('distribute v4.1: між ТОПами діє черга за отриманим', () => {
-  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 2)];
+test('distribute v4.1: між ТОПами діє черга за давністю', () => {
+  const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 2),
+                mkRec('p-b', 'i-box',   '2026-08-02T00:00:00.000Z', 1)];
   const session = { eventTypeName: 'Бос',
     presence: { 'p-a': { top: true }, 'p-b': { top: true } },
     drops: [{ itemId: 'i-box', quantity: 2 }],
@@ -265,11 +277,10 @@ test('distribute v4.1: між ТОПами діє черга за отриман
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
     classesById: CLSBYID, itemsById: ITBYID, history: hist, settings: S,
     nowISO: NOW, rng: rngZero, overrides: {}, rollMemo: {} });
-  assert.strictEqual(positions[0].winnerId, 'p-b', 'з двох ТОПів першим — хто менше взяв');
+  assert.strictEqual(positions[0].winnerId, 'p-b', 'з двох ТОПів першим — хто давніше брав');
   assert.strictEqual(positions[1].winnerId, 'p-a', 'далі другий ТОП');
   // p-c — ДД, тобто другий етап: у претендентах першого етапу його немає
-  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId + ':' + c.load),
-    ['p-b:0', 'p-a:2']);
+  assert.deepStrictEqual(positions[0].candidates.map(c => c.playerId), ['p-b', 'p-a']);
   assert.deepStrictEqual(positions.map(p => p.stage), [1, 1]);
 });
 test('distribute: етап важить більше за штраф — жадібний танк випереджає ДД', () => {
@@ -335,11 +346,11 @@ test('distribute: override — ручний переможець поза пре
   const over = LMCore.distribute({ ...base, overrides: { 'i-sword#0': 'p-b' } });
   assert.strictEqual(over.positions[0].winnerId, 'p-b');
   assert.strictEqual(over.positions[0].manual, true);
-  // p-a нічого не взяв, тож у черзі лишився з нулем і забирає скриню
+  // p-a нічого не взяв, тож лишився в черзі й забирає скриню
   assert.strictEqual(over.positions[1].winnerId, 'p-a');
-  assert.strictEqual(over.positions[1].load, 0);
+  assert.strictEqual(over.positions[1].lastAt, null, 'не отримував ніколи');
   // ручному переможцю теж записано його місце в черзі на момент рішення
-  assert.strictEqual(over.positions[0].load, 0);
+  assert.strictEqual(over.positions[0].lastAt, null);
 });
 
 // ---- v3.0.0: два етапи розподілу ----
@@ -475,7 +486,7 @@ test('formatReport v3: вечірній порядок міняє підписи
 });
 test('buildRecords: групування пар гравець×предмет, снапшоти, пропуск залишку (крит. 11)', () => {
   const mkPos3 = (itemId, ci, w, extra) => Object.assign({ key: itemId + '#' + ci, itemId,
-    copyIndex: ci, winnerId: w, load: 2, top: false, rolled: false, manual: false,
+    copyIndex: ci, winnerId: w, lastAt: null, top: false, rolled: false, manual: false,
     candidates: [] }, extra);
   const positions = [
     mkPos3('i-box', 0, 'p-a', { rolled: true }),
@@ -490,9 +501,9 @@ test('buildRecords: групування пар гравець×предмет, 
   assert.deepStrictEqual({
     q: boxRec.quantity, r: boxRec.rolled, m: boxRec.manual, c: boxRec.cancelled,
     nick: boxRec.playerNicknameSnapshot, item: boxRec.itemNameSnapshot,
-    sc: boxRec.loadAtDistribution, t: boxRec.timestamp, ev: boxRec.eventTypeName
+    t: boxRec.timestamp, ev: boxRec.eventTypeName
   }, { q: 2, r: true, m: true, c: false, nick: 'Andriy', item: 'Скриня',
-       sc: 2, t: NOW, ev: 'Бос' });
+       t: NOW, ev: 'Бос' });
   assert.match(boxRec.id, /^[0-9a-f-]{36}$/i);
   const swordRec = recs.find(r => r.itemId === 'i-sword');
   assert.deepStrictEqual([swordRec.quantity, swordRec.rolled, swordRec.manual],
