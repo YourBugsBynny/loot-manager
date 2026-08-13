@@ -156,22 +156,36 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 
 @media (max-width: 699px) { header.appbar .brand { display: none; } }
 
-/* Смужка предметів дропу для заявок (v2.0) */
-.item-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
-.item-tab { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+/* Смужка предметів дропу = і список здобичі, і перемикач заявок (v2.1) */
+.item-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.item-tab { display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid var(--line); border-radius: 10px; background: var(--card);
-  padding: 5px 10px; font-size: 0.9rem; max-width: 100%; }
+  padding: 4px 8px; font-size: 0.9rem; max-width: 100%; }
 .item-tab:hover { border-color: var(--accent); }
 .item-tab.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.item-tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 15ch; }
-.item-tab .qty { color: var(--muted); font-variant-numeric: tabular-nums; }
+.item-tab .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  border: 0; background: none; padding: 2px; margin: 0; cursor: pointer;
+  color: inherit; font: inherit; }
+.item-tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14ch; }
+.item-tab .inpDropQty { width: 52px; padding: 3px 6px; }
 .item-tab .cnt { min-width: 20px; text-align: center; border-radius: 999px;
   background: var(--line); color: var(--muted); font-size: 0.78rem; padding: 1px 6px;
   font-variant-numeric: tabular-nums; }
 .item-tab .cnt.has { background: var(--accent); color: var(--accent-ink); }
-.claims-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
-  margin-bottom: 2px; }
+.item-tab .del { border: 0; background: none; color: var(--danger); cursor: pointer;
+  font-size: 1rem; line-height: 1; padding: 2px 4px; }
+
+/* Панель активного предмета лишається на видноті під час гортання списку гравців */
+.claims-head { position: sticky; top: var(--sticky-top, 92px); z-index: 6; background: var(--card);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 -12px 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .claims-head .who { font-weight: 600; }
+
+/* Каталог згортається, щойно в дропі щось є */
+details.picker { margin-top: 8px; }
+details.picker > summary { cursor: pointer; color: var(--accent); font-size: 0.9rem;
+  padding: 4px 0; }
+details.picker[open] > summary { color: var(--muted); }
 details.sect { border: 1px solid var(--line); border-radius: 12px; background: var(--card);
   margin-bottom: 10px; }
 details.sect > summary { cursor: pointer; padding: 11px 13px; font-weight: 600; }
@@ -637,9 +651,10 @@ const I18N = {
     dropsH2: 'Что выпало', itemPh: 'Название предмета', pcsShort: 'шт.', add: 'Добавить',
     quickHint: 'Предмета нет в каталоге — создайте его:', qiNamePh: 'Название',
     fitsLabel: 'Кому подходит (пусто = всем):', createAdd: 'Создать и добавить',
-    nothingAdded: 'Пока ничего не добавлено.', claimsH2: 'Заявки (кто что хочет)',
+    claimsH2: 'Заявки (кто что хочет)',
     quickPick: 'Быстрый выбор:', moreItems: n => '+ ещё ' + n + ' — уточните поиск',
     whoWants: n => 'Кто хочет: ' + n, claimAll: 'Отметить всех', claimNone: 'Снять всех',
+    addLootToggle: '➕ Добавить добычу из каталога',
     claimsTotal: n => 'заявок: ' + n, pickItemHint: 'Выберите предмет выше.',
     claimAutoPresent: 'Отметка «хочет» автоматически помечает игрока присутствующим (вклад — во вкладке 1).',
     addLootFirst: 'Добавьте добычу выше, чтобы проставить заявки.', playerTh: 'Игрок',
@@ -727,9 +742,10 @@ const I18N = {
     dropsH2: 'Drops', itemPh: 'Item name', pcsShort: 'pcs', add: 'Add',
     quickHint: 'Item is not in the catalog — create it:', qiNamePh: 'Name',
     fitsLabel: 'Fits classes (empty = all):', createAdd: 'Create & add',
-    nothingAdded: 'Nothing added yet.', claimsH2: 'Claims (who wants what)',
+    claimsH2: 'Claims (who wants what)',
     quickPick: 'Quick pick:', moreItems: n => '+ ' + n + ' more — refine the search',
     whoWants: n => 'Who wants: ' + n, claimAll: 'Mark all', claimNone: 'Clear all',
+    addLootToggle: '➕ Add loot from the catalog',
     claimsTotal: n => 'claims: ' + n, pickItemHint: 'Pick an item above.',
     claimAutoPresent: 'Checking a claim automatically marks the player as present (contribution is on tab 1).',
     addLootFirst: 'Add loot above to set claims.', playerTh: 'Player',
@@ -911,7 +927,15 @@ function switchTab(n) {
 function renderActiveTab() {
   [null, renderTab1, renderTab2, renderTab3, renderTab4][ui.activeTab]();
 }
-function renderAll() { renderHeader(); renderActiveTab(); }
+function renderAll() { renderHeader(); renderActiveTab(); syncStickyOffset(); }
+// липкі блоки всередині вкладок мають починатися рівно під шапкою+вкладками,
+// а їхня висота залежить від мови, масштабу й ширини екрана
+function syncStickyOffset() {
+  const hdr = document.querySelector('header.appbar');
+  const nav = document.querySelector('nav.tabs');
+  const px = (hdr ? hdr.offsetHeight : 0) + (nav ? nav.offsetHeight : 0);
+  document.documentElement.style.setProperty('--sticky-top', px + 'px');
+}
 
 /* ===== Вкладка 1: Подія та вклад (ТЗ §4.2) ===== */
 // v1.9: ростер сіткою до 4 колонок, згрупований за класами
@@ -1099,17 +1123,8 @@ function quickPickHtml(filter) {
 function renderTab2() {
   const d = draft();
   const itemsById = byId(db.items);
-  const dropRows = d.drops.length === 0
-    ? '<p class="muted">' + t('nothingAdded') + '</p>'
-    : d.drops.map(dr => {
-        const it = itemsById[dr.itemId];
-        return '<div class="roster-row"><span class="grow">' + itemIcon(it) +
-          escapeHtml(itemDisplayName(it)) +
-          ' ' + (it ? rarityBadge(it) : '') + '</span>' +
-          '<label class="inline small">' + t('pcsShort') + ' <input type="number" min="1" step="1" class="inpDropQty" ' +
-            'data-iid="' + dr.itemId + '" value="' + dr.quantity + '"></label>' +
-          '<button class="btn btn-sm btn-danger btnDropDel" data-iid="' + dr.itemId + '">✕</button></div>';
-      }).join('');
+  // каталог згорнутий, щойно в дропі щось є (доки офіцер не розгорне вручну)
+  const pickerOpen = ui.pickerOpen !== undefined ? ui.pickerOpen : d.drops.length === 0;
 
   const dropItems = d.drops.map(dr => itemsById[dr.itemId]).filter(Boolean);
   // ТЗ §4.3 (v1.3): заявки доступні всім активним; галочка сама позначає присутність
@@ -1123,8 +1138,8 @@ function renderTab2() {
   } else if (claimants.length === 0) {
     claimsHtml = classFilterBar() + '<p class="muted">' + t('filterEmpty') + '</p>';
   } else {
-    // v2.0: заявки предметно-орієнтовані — предмет обирається зверху,
-    // під ним лише той список гравців, який реально треба відмітити
+    // v2.1: смужка предметів — водночас список здобичі (кількість, ✕)
+    // і перемикач активного предмета для заявок
     if (!dropItems.some(i => i.id === ui.claimItemId)) ui.claimItemId = dropItems[0].id;
     const activeItem = itemsById[ui.claimItemId];
     const wants = (pid, iid) => Array.isArray(d.claims[pid]) && d.claims[pid].includes(iid);
@@ -1133,12 +1148,17 @@ function renderTab2() {
     const tabs = dropItems.map(it => {
       const dr = d.drops.find(x => x.itemId === it.id);
       const n = countFor(it.id);
-      return '<button type="button" class="item-tab' +
-        (it.id === ui.claimItemId ? ' active' : '') + '" data-iid="' + it.id + '">' +
-        (it.icon ? itemIcon(it) : '<span class="dot ' + it.rarity + '"></span>') +
-        '<span class="nm">' + escapeHtml(itemDisplayName(it)) + '</span>' +
-        (dr && dr.quantity > 1 ? '<span class="qty">×' + dr.quantity + '</span>' : '') +
-        '<span class="cnt' + (n ? ' has' : '') + '">' + n + '</span></button>';
+      return '<div class="item-tab' + (it.id === ui.claimItemId ? ' active' : '') + '">' +
+        '<button type="button" class="pick" data-iid="' + it.id + '" title="' +
+          escapeHtml(itemDisplayName(it)) + '">' +
+          (it.icon ? itemIcon(it) : '<span class="dot ' + it.rarity + '"></span>') +
+          '<span class="nm">' + escapeHtml(itemDisplayName(it)) + '</span>' +
+          '<span class="cnt' + (n ? ' has' : '') + '">' + n + '</span>' +
+        '</button>' +
+        '<input type="number" min="1" step="1" class="inpDropQty" data-iid="' + it.id +
+          '" value="' + (dr ? dr.quantity : 1) + '" title="' + t('pcsShort') + '">' +
+        '<button type="button" class="del btnDropDel" data-iid="' + it.id + '">✕</button>' +
+      '</div>';
     }).join('');
 
     const groups = new Map();
@@ -1188,7 +1208,10 @@ function renderTab2() {
           ' <input type="number" id="inpQty" min="1" step="1" value="1"></label>' +
         '<button class="btn btn-primary" id="btnAddDrop">' + t('add') + '</button>' +
       '</div>' +
-      '<div id="quickPick" style="margin-top:8px">' + quickPickHtml('') + '</div>' +
+      '<details class="picker" id="pickerBox"' + (pickerOpen ? ' open' : '') + '>' +
+        '<summary>' + t('addLootToggle') + '</summary>' +
+        '<div id="quickPick">' + quickPickHtml('') + '</div>' +
+      '</details>' +
       '<div id="quickItemForm" hidden style="margin-top:10px; border-top:1px dashed var(--line); padding-top:10px">' +
         '<p class="small muted">' + t('quickHint') + '</p>' +
         '<div class="row">' +
@@ -1206,7 +1229,6 @@ function renderTab2() {
           '<button class="btn btn-primary btn-sm" id="btnQuickCreate">' + t('createAdd') + '</button>' +
         '</div>' +
       '</div>' +
-      '<div style="margin-top:10px">' + dropRows + '</div>' +
     '</div>' +
     '<div class="card"><h2>' + t('claimsH2') + '</h2>' + claimsHtml + '</div>';
 
@@ -1218,6 +1240,13 @@ function renderTab2() {
   });
   tab.querySelector('#itemSearch').addEventListener('input', e => {
     tab.querySelector('#quickPick').innerHTML = quickPickHtml(e.target.value);
+    tab.querySelector('#pickerBox').open = true;   // пошук сам розгортає каталог
+    ui.pickerOpen = true;
+  });
+  // саме клік по заголовку = ручний намір; подію toggle слухати не можна —
+  // вставка <details open> через innerHTML кидає її сама й перебиває авто-правило
+  tab.querySelector('#pickerBox > summary').addEventListener('click', e => {
+    ui.pickerOpen = !e.currentTarget.parentNode.open;
   });
   tab.querySelector('#btnAddDrop').addEventListener('click', () => {
     const name = tab.querySelector('#itemSearch').value.trim();
@@ -1268,9 +1297,9 @@ function renderTab2() {
     }));
   wireClassFilter(tab, renderTab2);
   tab.querySelector('.item-tabs')?.addEventListener('click', e => {
-    const btn = e.target.closest('.item-tab');
-    if (!btn) return;
-    ui.claimItemId = btn.dataset.iid;
+    const pick = e.target.closest('.pick');   // лише кнопка вибору, не поле кількості чи ✕
+    if (!pick) return;
+    ui.claimItemId = pick.dataset.iid;
     renderTab2();
   });
   tab.querySelectorAll('.chkClaim').forEach(c =>
@@ -2023,6 +2052,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnSettings').addEventListener('click', () => switchTab(4));
   document.querySelectorAll('nav.tabs .tab').forEach(b =>
     b.addEventListener('click', () => switchTab(Number(b.dataset.tab))));
+  window.addEventListener('resize', syncStickyOffset);
   renderAll();
   bootstrapSeed();
 });
