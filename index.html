@@ -31,6 +31,9 @@ h2:first-child { margin-top: 0; }
   box-shadow: 0 6px 24px rgba(0,0,0,.25);
 }
 #banner button { background: none; border: 0; color: #fff; font-size: 1.1rem; cursor: pointer; }
+/* display:flex вище перебиває [hidden]{display:none} браузера — без цього правила
+   порожня плашка висить на екрані постійно */
+#banner[hidden] { display: none; }
 
 header.appbar {
   position: sticky; top: 0; z-index: 20; background: var(--card);
@@ -119,16 +122,12 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
   border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .roster-row:last-child { border-bottom: 0; }
 .roster-row .nick { min-width: 130px; font-weight: 600; }
-.roster-row.absent .nick { color: var(--muted); font-weight: 400; }
 
 /* Ростер вкладки 1: до 4 колонок, згруповано за класами (v1.9) */
 .roster-grid { display: grid; grid-template-columns: 1fr; gap: 2px 14px; }
 @media (min-width: 620px)  { .roster-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 940px)  { .roster-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (min-width: 1180px) { .roster-grid { grid-template-columns: repeat(4, 1fr); } }
-.roster-grid.advanced { grid-template-columns: 1fr; }
-@media (min-width: 780px)  { .roster-grid.advanced { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1180px) { .roster-grid.advanced { grid-template-columns: repeat(3, 1fr); } }
 .roster-class-head {
   grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px;
   margin: 12px 0 2px; padding-bottom: 3px; border-bottom: 1px solid var(--line);
@@ -138,17 +137,18 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .roster-cell { display: flex; align-items: center; gap: 8px; padding: 3px 2px;
   min-width: 0; flex-wrap: nowrap; }
 .roster-cell > label.inline { flex: 1 1 auto; min-width: 0; }   /* нік стискається… */
+.roster-cell > .nick { flex: 1 1 auto; min-width: 0; }          /* …і як голий span (вкладка 1) */
 .roster-cell .nick { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
-.roster-cell.absent .nick, .roster-cell.dim .nick { color: var(--muted); font-weight: 400; }
-.roster-cell .lvl, .roster-cell > label.inline.small, .roster-cell .metrics {
+.roster-cell.dim .nick { color: var(--muted); font-weight: 400; }
+.roster-cell .lvl, .roster-cell > label.inline.small {
   flex: 0 0 auto;                                               /* …решта не переноситься */
 }
 .roster-cell .lvl { font-variant-numeric: tabular-nums; }
-.roster-grid.advanced .roster-cell { flex-wrap: wrap; }         /* три числових поля — можна в 2 ряди */
-.metrics { display: flex; gap: 6px; flex-wrap: wrap; }
-.metrics label { display: flex; flex-direction: column; font-size: 0.72rem; color: var(--muted); }
 
+.stage-head { font-size: 0.95rem; margin: 14px 0 6px; color: var(--muted);
+  border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.stage-head:first-child { margin-top: 0; }
 .pos-row { padding: 9px 4px; border-bottom: 1px solid var(--line); }
 .pos-row:last-child { border-bottom: 0; }
 .pos-row .pos-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -166,7 +166,8 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .item-tab .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
   border: 0; background: none; padding: 2px; margin: 0; cursor: pointer;
   color: inherit; font: inherit; }
-.item-tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14ch; }
+/* v3.0.0: назва предмета не обрізається — офіцер мусить бачити, що саме роздає */
+.item-tab .nm { white-space: normal; overflow-wrap: anywhere; max-width: 22ch; text-align: left; }
 .item-tab .inpDropQty { width: 52px; padding: 3px 6px; }
 .item-tab .cnt { min-width: 20px; text-align: center; border-radius: 999px;
   background: var(--line); color: var(--muted); font-size: 0.78rem; padding: 1px 6px;
@@ -247,8 +248,17 @@ const LMCore = (() => {
   // ваги для автостворюваних класів при імпорті складу (за назвою, без регістру)
   const CLASS_WEIGHT_HINTS = {
     'воин': [0.3, 0.6, 0.1], 'жрец': [0.1, 0.1, 0.8],
-    'танк': [0.2, 0.7, 0.1], 'хил': [0.1, 0.1, 0.8]
+    'танк': [0.2, 0.7, 0.1], 'лекарь': [0.1, 0.1, 0.8], 'хил': [0.1, 0.1, 0.8]
   };
+
+  // v3.0.0: група розподілу класу — 'A' танки та лекарі, 'B' ДД (усе інше).
+  // Реальний процес альянсу: зранку першими обирають A, ввечері — B.
+  const GROUP_A_NAMES = Object.freeze(['воин', 'жрец', 'танк', 'лекарь', 'хил']);
+  function groupForClassName(name) {
+    return GROUP_A_NAMES.includes(String(name || '').trim().toLowerCase()) ? 'A' : 'B';
+  }
+  // година за місцевим часом клієнта; межа — 15:00
+  function defaultFirstGroup(hour) { return Number(hour) < 15 ? 'A' : 'B'; }
 
   function emptyAllianceData() {
     return { players: [], history: [], eventTypes: [], draftSession: null };
@@ -257,11 +267,12 @@ const LMCore = (() => {
   function emptyDb(nowISO) {
     const alliance = { id: uuid(), name: 'Мой альянс', createdAt: nowISO };
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       activeAllianceId: alliance.id,
       settings: defaultSettings(),
       classes: CLASS_SEED.map(([name, wDmg, wTaken, wHeal]) =>
-        ({ id: uuid(), name, wDmg, wTaken, wHeal, isArchived: false })),
+        ({ id: uuid(), name, wDmg, wTaken, wHeal,
+           group: groupForClassName(name), isArchived: false })),
       items: [],
       alliances: [alliance],
       perAlliance: { [alliance.id]: emptyAllianceData() }
@@ -269,11 +280,27 @@ const LMCore = (() => {
   }
 
   function migrate(db) {
+    // v1.2: мова лише ru|en; відсутня чи невідома (зокрема стара uk) → ru
+    if (db.settings && !LANGS.includes(db.settings.language)) db.settings.language = 'ru';
     if (db.schemaVersion === 1) {
-      // v1.2: мова лише ru|en; відсутня чи невідома (зокрема стара uk) → ru
-      if (db.settings && !LANGS.includes(db.settings.language)) db.settings.language = 'ru';
+      // v3.0.0: класи дістають групу розподілу за назвою
+      for (const c of db.classes || []) {
+        if (c.group !== 'A' && c.group !== 'B') c.group = groupForClassName(c.name);
+      }
+      // чернетка сеансу: присутності й метрик розширеного режиму більше не існує
+      for (const paData of Object.values(db.perAlliance || {})) {
+        const d = paData.draftSession;
+        if (!d) continue;
+        delete d.mode;
+        for (const pid of Object.keys(d.presence || {})) {
+          d.presence[pid] = { top: !!d.presence[pid].top };
+        }
+        if (d.firstGroup !== 'A' && d.firstGroup !== 'B') d.firstGroup = 'A';
+      }
+      db.schemaVersion = 2;
       return { ok: true, db };
     }
+    if (db.schemaVersion === 2) return { ok: true, db };
     return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
   }
 
@@ -308,33 +335,15 @@ const LMCore = (() => {
     return migrate(raw);
   }
 
-  // ТЗ §5.2: бал вкладу 0–100 лише для присутніх гравців
-  function computeScores(session, playersById, classesById, settings) {
+  // ТЗ §5.2 (v3.0.0): бал вкладу — кожному активному гравцю складу; ТОП дає більший бал.
+  // Відмітки присутності немає: офіцеру задовго відмічати ~70 нікнеймів щоівенту.
+  function computeScores(session, playersById, settings) {
     const scores = {};
-    const present = Object.keys(session.presence || {})
-      .filter(pid => session.presence[pid] && session.presence[pid].present &&
-        playersById[pid] && playersById[pid].isActive !== false);   // вибулі не рахуються
-    if (session.mode === 'simple') {
-      for (const pid of present) {
-        scores[pid] = session.presence[pid].top ? settings.scoreTop : settings.scorePresent;
-      }
-      return scores;
-    }
-    const num = v => Number(v) || 0;
-    let maxD = 0, maxT = 0, maxH = 0;
-    for (const pid of present) {
-      const p = session.presence[pid];
-      maxD = Math.max(maxD, num(p.damage));
-      maxT = Math.max(maxT, num(p.taken));
-      maxH = Math.max(maxH, num(p.heal));
-    }
-    for (const pid of present) {
-      const p = session.presence[pid];
-      const cls = classesById[playersById[pid].classId] || { wDmg: 0, wTaken: 0, wHeal: 0 };
-      const nD = maxD > 0 ? num(p.damage) / maxD : 0;
-      const nT = maxT > 0 ? num(p.taken) / maxT : 0;
-      const nH = maxH > 0 ? num(p.heal) / maxH : 0;
-      scores[pid] = 100 * (cls.wDmg * nD + cls.wTaken * nT + cls.wHeal * nH);
+    const presence = (session && session.presence) || {};
+    for (const pid of Object.keys(playersById)) {
+      if (playersById[pid].isActive === false) continue;   // вибулі не рахуються
+      scores[pid] = (presence[pid] && presence[pid].top)
+        ? settings.scoreTop : settings.scorePresent;
     }
     return scores;
   }
@@ -359,8 +368,7 @@ const LMCore = (() => {
     const { session, playersById, classesById, itemsById, history, settings,
             nowISO, overrides, rollMemo } = ctx;
     const rng = ctx.rng || Math.random;
-    const scores = computeScores(session, playersById, classesById, settings);
-    const presentIds = Object.keys(scores);
+    const scores = computeScores(session, playersById, settings);
     const loadCache = new Map();
     const loadOf = pid => {
       if (!loadCache.has(pid)) {
@@ -372,56 +380,89 @@ const LMCore = (() => {
       .map((d, idx) => ({ ...d, idx,
         rank: (itemsById[d.itemId] && RARITY_RANK[itemsById[d.itemId].rarity]) || 0 }))
       .sort((a, b) => b.rank - a.rank || a.idx - b.idx);
-    const wonCount = {};   // pid → штук виграно в сеансі (wWon-штраф)
+    // v3.0.0: порядок етапів задає офіцер у чернетці сеансу (ранок / вечір)
+    const firstGroup = session.firstGroup === 'B' ? 'B' : 'A';
+    const groupOf = pid => {
+      const p = playersById[pid];
+      const c = p && classesById[p.classId];
+      return c && c.group === 'A' ? 'A' : 'B';
+    };
+    const stageOf = pid => (groupOf(pid) === firstGroup ? 1 : 2);
+
+    const wonCount = {};   // pid → штук виграно в сеансі (wWon-штраф), наскрізно між етапами
     const wonItem = {};    // pid → Set(itemId): правило «одна штука предмета на гравця»
-    const positions = [];
+    const take = (itemId, pid) => {
+      wonCount[pid] = (wonCount[pid] || 0) + 1;
+      (wonItem[pid] = wonItem[pid] || new Set()).add(itemId);
+    };
+    const hasClassBonus = (item, pid) => item.targetClasses.length > 0 &&
+      item.targetClasses.includes(playersById[pid].classId);
+
+    // усі штуки здобичі одним пласким списком — порядок звіту не залежить від етапів
+    const slots = [];
     for (const d of drops) {
       const item = itemsById[d.itemId];
       if (!item) continue;
       const qty = Math.max(1, Number(d.quantity) || 1);
-      const hasClassBonus = pid => item.targetClasses.length > 0 &&
-        item.targetClasses.includes(playersById[pid].classId);
       for (let copy = 0; copy < qty; copy++) {
-        const key = d.itemId + '#' + copy;
-        const prioOf = pid => scores[pid]
-          + (hasClassBonus(pid) ? settings.pClass : 0)
-          - settings.kPenalty * loadOf(pid)
-          - settings.wWon * (wonCount[pid] || 0);
-        const cands = presentIds
-          .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
-                         session.claims[pid].includes(d.itemId))
-          .filter(pid => !(wonItem[pid] && wonItem[pid].has(d.itemId)))
-          .map(pid => ({ playerId: pid, priority: prioOf(pid) }))
-          .sort((a, b) => b.priority - a.priority);
-        const manualWinner = overrides && overrides[key];
-        let winnerId = null, priority = null, rolled = false, manual = false;
-        if (manualWinner && playersById[manualWinner] && scores[manualWinner] !== undefined) {
-          winnerId = manualWinner; manual = true;
-          const c = cands.find(x => x.playerId === manualWinner);
-          priority = c ? c.priority : null;
-        } else if (cands.length > 0) {
-          const top = cands[0].priority;
-          const leaders = cands.filter(c => top - c.priority < 0.001);
-          if (leaders.length > 1) {
-            rolled = true;
-            const memoWinner = rollMemo && rollMemo[key];
-            const chosen = (memoWinner && leaders.some(l => l.playerId === memoWinner))
-              ? leaders.find(l => l.playerId === memoWinner)
-              : leaders[Math.floor(rng() * leaders.length)];
-            winnerId = chosen.playerId; priority = chosen.priority;
-          } else {
-            winnerId = leaders[0].playerId; priority = leaders[0].priority;
-          }
-        }
-        if (winnerId) {
-          wonCount[winnerId] = (wonCount[winnerId] || 0) + 1;
-          (wonItem[winnerId] = wonItem[winnerId] || new Set()).add(d.itemId);
-        }
-        positions.push({ key, itemId: d.itemId, copyIndex: copy, winnerId, priority,
-          rolled, manual, classBonus: winnerId ? hasClassBonus(winnerId) : false,
-          candidates: cands });
+        slots.push({ key: d.itemId + '#' + copy, itemId: d.itemId, copyIndex: copy, item,
+          winnerId: null, priority: null, rolled: false, manual: false, candidates: [] });
       }
     }
+
+    // претенденти на штуку; stage === null — без фільтра за групою (для ручних рішень)
+    const claimantsFor = (slot, stage) => Object.keys(scores)
+      .filter(pid => stage === null || stageOf(pid) === stage)
+      .filter(pid => Array.isArray(session.claims && session.claims[pid]) &&
+                     session.claims[pid].includes(slot.itemId))
+      .filter(pid => !(wonItem[pid] && wonItem[pid].has(slot.itemId)))
+      .map(pid => ({ playerId: pid, priority: scores[pid]
+        + (hasClassBonus(slot.item, pid) ? settings.pClass : 0)
+        - settings.kPenalty * loadOf(pid)
+        - settings.wWon * (wonCount[pid] || 0) }))
+      .sort((a, b) => b.priority - a.priority);
+
+    // ТЗ §5.7 крок 0: ручні рішення офіцера — поза чергою етапів і поза обмеженнями
+    for (const slot of slots) {
+      const manualWinner = overrides && overrides[slot.key];
+      if (!manualWinner || !playersById[manualWinner] ||
+          scores[manualWinner] === undefined) continue;
+      slot.candidates = claimantsFor(slot, null);
+      const c = slot.candidates.find(x => x.playerId === manualWinner);
+      slot.winnerId = manualWinner; slot.manual = true;
+      slot.priority = c ? c.priority : null;
+      take(slot.itemId, manualWinner);
+    }
+
+    // ТЗ §5.7 кроки 1-2: етап першої групи по всій здобичі, далі друга група по залишках
+    for (const stage of [1, 2]) {
+      for (const slot of slots) {
+        if (slot.winnerId) continue;
+        const cands = claimantsFor(slot, stage);
+        slot.candidates = cands;
+        if (cands.length === 0) continue;
+        const top = cands[0].priority;
+        const leaders = cands.filter(c => top - c.priority < 0.001);
+        let chosen = leaders[0];
+        if (leaders.length > 1) {
+          slot.rolled = true;
+          const memoWinner = rollMemo && rollMemo[slot.key];
+          chosen = (memoWinner && leaders.some(l => l.playerId === memoWinner))
+            ? leaders.find(l => l.playerId === memoWinner)
+            : leaders[Math.floor(rng() * leaders.length)];
+        }
+        slot.winnerId = chosen.playerId; slot.priority = chosen.priority;
+        take(slot.itemId, chosen.playerId);
+      }
+    }
+
+    const positions = slots.map(s => ({
+      key: s.key, itemId: s.itemId, copyIndex: s.copyIndex,
+      winnerId: s.winnerId, priority: s.priority, rolled: s.rolled, manual: s.manual,
+      stage: s.winnerId ? stageOf(s.winnerId) : 2,
+      classBonus: s.winnerId ? hasClassBonus(s.item, s.winnerId) : false,
+      candidates: s.candidates
+    }));
     return { positions, scores };
   }
 
@@ -470,7 +511,7 @@ const LMCore = (() => {
       if (!cls) {
         const w = CLASS_WEIGHT_HINTS[g.className.toLowerCase()] || [0.8, 0.1, 0.1];
         cls = { id: uuid(), name: g.className, wDmg: w[0], wTaken: w[1], wHeal: w[2],
-          isArchived: false };
+          group: groupForClassName(g.className), isArchived: false };
         classes.push(cls); addedClasses++;
       }
       for (const rp of g.players) {
@@ -529,60 +570,84 @@ const LMCore = (() => {
     return { added, updated };
   }
 
-  // ТЗ §6: «ТОП Вклад» — простий режим: прапорці; розширений: максимум балу
+  // ТЗ §6 (v3.0.0): «ТОП Вклад» — виключно прапорець офіцера
   function topContributors(session, scores) {
-    if (session.mode === 'simple') {
-      return new Set(Object.keys(scores)
-        .filter(pid => session.presence[pid] && session.presence[pid].top));
-    }
-    const vals = Object.values(scores);
-    if (vals.length === 0) return new Set();
-    const max = Math.max(...vals);
-    return new Set(Object.keys(scores).filter(pid => scores[pid] === max));
+    const presence = (session && session.presence) || {};
+    return new Set(Object.keys(scores).filter(pid => presence[pid] && presence[pid].top));
   }
 
   // v1.2: фіксовані рядки звіту — російська (дефолт) та англійська
   const REPORT_I18N = Object.freeze({
     ru: { header: (a, e) => '📜 [АЛЬЯНС: ' + a + '] РАСПРЕДЕЛЕНИЕ ДОБЫЧИ (' + e + ')',
           pcs: 'шт.', top: 'ТОП Вклад', free: '[Свободный остаток]',
+          stage: (n, who) => '▸ ЭТАП ' + n + ' — ' + who,
+          groupA: 'Танки и лекари', groupB: 'ДД',
           footer: 'Спасибо всем за участие! Предметы ждут в магазине альянса.' },
     en: { header: (a, e) => '📜 [ALLIANCE: ' + a + '] LOOT DISTRIBUTION (' + e + ')',
           pcs: 'pcs', top: 'TOP Contribution', free: '[Unclaimed]',
+          stage: (n, who) => '▸ STAGE ' + n + ' — ' + who,
+          groupA: 'Tanks & healers', groupB: 'DPS',
           footer: 'Thanks everyone for participating! Items are waiting in the alliance shop.' }
   });
 
-  // ТЗ §6: рядок на предмет; кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
+  // v3.0.0: у чат ідуть обидві назви предмета — мовою інтерфейсу першою, далі друга через «/».
+  // Гравці сидять у клієнтах різних мов, і одна назва не дає їм зрозуміти, про що йдеться.
+  function itemNamesForChat(item, lang) {
+    if (!item) return '?';
+    const ru = item.name || '';
+    const en = item.nameEn || '';
+    const primary = (lang === 'en' && en) ? en : ru;
+    const other = (lang === 'en' && en) ? ru : en;
+    if (!other || other === primary) return primary || other || '?';
+    return primary + ' / ' + other;
+  }
+
+  // ТЗ §6 (v3.0.0): дві секції етапів; рядок на предмет усередині секції;
+  // кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
   function formatReport({ allianceName, eventTypeName, positions, itemsById,
-                          playersById, classesById, topSet, lang }) {
+                          playersById, classesById, topSet, lang, firstGroup }) {
     const L = REPORT_I18N[lang] || REPORT_I18N.ru;
-    const byItem = [];       // порядок першої появи предмета
-    const groups = new Map();
-    for (const pos of positions) {
-      if (!groups.has(pos.itemId)) { groups.set(pos.itemId, []); byItem.push(pos.itemId); }
-      groups.get(pos.itemId).push(pos);
-    }
-    const lines = [];
-    for (const itemId of byItem) {
-      const item = itemsById[itemId];
-      const posList = groups.get(itemId);
-      const entries = [];
-      let freeCount = 0;
-      for (const pos of posList) {
-        if (!pos.winnerId) { freeCount++; continue; }
-        const player = playersById[pos.winnerId];
-        const cls = player && classesById[player.classId];
-        const nick = player ? player.nickname : '?';
-        const clsName = cls ? cls.name : '?';
-        const topMark = topSet.has(pos.winnerId) ? ' | ' + L.top : '';
-        entries.push('@' + nick + ' [' + clsName + topMark + ']');
+    const first = firstGroup === 'B' ? 'B' : 'A';
+    const groupName = g => (g === 'A' ? L.groupA : L.groupB);
+    const linesFor = stage => {
+      const byItem = [];       // порядок першої появи предмета в межах етапу
+      const groups = new Map();
+      for (const pos of positions) {
+        if ((pos.stage === 1 ? 1 : 2) !== stage) continue;
+        if (!groups.has(pos.itemId)) { groups.set(pos.itemId, []); byItem.push(pos.itemId); }
+        groups.get(pos.itemId).push(pos);
       }
-      if (freeCount > 0) entries.push(L.free);
-      const displayName = item ? ((lang === 'en' && item.nameEn) ? item.nameEn : item.name) : '?';
-      lines.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
-        entries.join(', '));
+      const out = [];
+      for (const itemId of byItem) {
+        const item = itemsById[itemId];
+        const posList = groups.get(itemId);
+        const entries = [];
+        let freeCount = 0;
+        for (const pos of posList) {
+          if (!pos.winnerId) { freeCount++; continue; }
+          const player = playersById[pos.winnerId];
+          const cls = player && classesById[player.classId];
+          const nick = player ? player.nickname : '?';
+          const clsName = cls ? cls.name : '?';
+          const topMark = topSet.has(pos.winnerId) ? ' | ' + L.top : '';
+          entries.push('@' + nick + ' [' + clsName + topMark + ']');
+        }
+        if (freeCount > 0) entries.push(L.free);
+        const displayName = itemNamesForChat(item, lang);
+        out.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
+          entries.join(', '));
+      }
+      return out;
+    };
+    const blocks = [];
+    for (const stage of [1, 2]) {
+      const lines = linesFor(stage);
+      if (lines.length === 0) continue;
+      const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
+      blocks.push(L.stage(stage, groupName(g)) + '\n' + lines.join('\n'));
     }
     return L.header(allianceName, eventTypeName) + '\n\n' +
-      lines.join('\n') + '\n\n' + L.footer;
+      blocks.join('\n\n') + '\n\n' + L.footer;
   }
 
   // ТЗ §5.8, §3.3: групування позицій у записи історії зі снапшотами
@@ -617,7 +682,8 @@ const LMCore = (() => {
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
            computeScores, historyLoad, distribute, topContributors, formatReport,
            buildRecords, mapCatalogRarity, validateCatalog, syncCatalog,
-           parseRoster, applyRoster, isPristine };
+           parseRoster, applyRoster, isPristine,
+           groupForClassName, defaultFirstGroup };
 })();
 </script>
 
@@ -642,10 +708,13 @@ const I18N = {
     saveFail: m => 'Не удалось сохранить (хранилище переполнено?): ' + m +
       ' Сделайте экспорт JSON во вкладке 4!',
     eventH2: 'Событие', eventPh: 'Тип события (напр., Вторжение монстров)',
-    modeLabel: 'Режим вклада:', modeSimple: 'Простой (ТОП)', modeAdvanced: 'Расширенный (числа)',
-    presenceH2: 'Присутствующие и вклад', allPresent: 'Все присутствуют', nonePresent: 'Снять всех',
+    orderLabel: 'Порядок этапов:', orderMorning: 'Утро: сначала танки и лекари',
+    orderEvening: 'Вечер: сначала ДД', clearTop: 'Снять все ТОП',
+    topCount: 'ТОП', stageHead: n => 'Этап ' + n,
+    groupA: 'Танки и лекари', groupB: 'ДД', thGroup: 'Группа',
+    presenceH2: 'Состав и ТОП вклад',
     classFilterLabel: 'Класс:', filterAll: 'Все',
-    present: 'Присутствует', topFlag: 'ТОП',
+    topFlag: 'ТОП',
     noPlayers: 'Нет активных игроков. Добавьте их во вкладке «4. Базы и настройки».',
     filterEmpty: 'Игроков этого класса нет.',
     dropsH2: 'Что выпало', itemPh: 'Название предмета', pcsShort: 'шт.', add: 'Добавить',
@@ -656,15 +725,14 @@ const I18N = {
     whoWants: n => 'Кто хочет: ' + n, claimAll: 'Отметить всех', claimNone: 'Снять всех',
     addLootToggle: '➕ Добавить добычу из каталога',
     claimsTotal: n => 'заявок: ' + n, pickItemHint: 'Выберите предмет выше.',
-    claimAutoPresent: 'Отметка «хочет» автоматически помечает игрока присутствующим (вклад — во вкладке 1).',
     addLootFirst: 'Добавьте добычу выше, чтобы проставить заявки.', playerTh: 'Игрок',
     enterItemName: 'Введите название предмета.', itemExists: 'Предмет с таким названием уже существует.',
     calc: '⚖️ Рассчитать распределение',
-    calcHint: 'Нужны присутствующие игроки (вкладка 1) и добыча (вкладка 2).',
+    calcHint: 'Нужны состав альянса (вкладка 4) и добыча (вкладка 2).',
     resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Свободный остаток',
     classBonusBadge: 'класс-бонус', rollBadge: '🎲 ролл', manualBadge: 'ручное',
     winnerLabel: 'Победитель:', autoOpt: '— авто —', claimantsGrp: 'Претенденты',
-    otherGrp: 'Другой присутствующий игрок', chatTextH2: 'Текст для чата',
+    otherGrp: 'Другой игрок альянса', chatTextH2: 'Текст для чата',
     copyBtn: '📋 Скопировать текст', confirmBtn: '✅ Подтвердить и сохранить',
     copied: 'Скопировано ✓', copyFail: 'Не удалось скопировать — выделите текст вручную.',
     confirmSave: 'Сохранить распределение в историю? Черновик сеанса будет очищен.',
@@ -712,7 +780,7 @@ const I18N = {
     histScore: s => '(балл ' + s + ')', cancelRec: 'Отменить',
     cancelRecConfirm: (i, n) => 'Отменить запись «' + i + ' → ' + n +
       '»? Она перестанет влиять на анти-жадность.',
-    setScoreTop: 'Балл «ТОП»', setScorePresent: 'Балл присутствующего', setPClass: 'Класс-бонус P',
+    setScoreTop: 'Балл «ТОП»', setScorePresent: 'Балл обычного участника', setPClass: 'Класс-бонус P',
     setKPenalty: 'Штраф истории K', setHistoryDays: 'Окно истории, дней',
     setWWon: 'Штраф за выигрыш в сеансе',
     rarityWeightsLabel: 'Веса редкости в анти-жадности:', resetDefaults: 'Сбросить к дефолтам',
@@ -733,10 +801,13 @@ const I18N = {
     dbCorrupt: m => 'Database was corrupted, a new one was created. Error: ' + m,
     saveFail: m => 'Failed to save (storage full?): ' + m + ' Export JSON on tab 4!',
     eventH2: 'Event', eventPh: 'Event type (e.g., Monster Invasion)',
-    modeLabel: 'Contribution mode:', modeSimple: 'Simple (TOP)', modeAdvanced: 'Advanced (numbers)',
-    presenceH2: 'Attendance & contribution', allPresent: 'All present', nonePresent: 'Clear all',
+    orderLabel: 'Stage order:', orderMorning: 'Morning: tanks & healers first',
+    orderEvening: 'Evening: DPS first', clearTop: 'Clear all TOP',
+    topCount: 'TOP', stageHead: n => 'Stage ' + n,
+    groupA: 'Tanks & healers', groupB: 'DPS', thGroup: 'Group',
+    presenceH2: 'Roster & TOP contribution',
     classFilterLabel: 'Class:', filterAll: 'All',
-    present: 'Present', topFlag: 'TOP',
+    topFlag: 'TOP',
     noPlayers: 'No active players. Add them on the "4. Data & Settings" tab.',
     filterEmpty: 'No players of this class.',
     dropsH2: 'Drops', itemPh: 'Item name', pcsShort: 'pcs', add: 'Add',
@@ -747,15 +818,14 @@ const I18N = {
     whoWants: n => 'Who wants: ' + n, claimAll: 'Mark all', claimNone: 'Clear all',
     addLootToggle: '➕ Add loot from the catalog',
     claimsTotal: n => 'claims: ' + n, pickItemHint: 'Pick an item above.',
-    claimAutoPresent: 'Checking a claim automatically marks the player as present (contribution is on tab 1).',
     addLootFirst: 'Add loot above to set claims.', playerTh: 'Player',
     enterItemName: 'Enter an item name.', itemExists: 'An item with this name already exists.',
     calc: '⚖️ Calculate distribution',
-    calcHint: 'Need present players (tab 1) and loot (tab 2).',
+    calcHint: 'Need an alliance roster (tab 4) and loot (tab 2).',
     resultH2: 'Result', copyN: n => 'copy ' + n, freeLeft: 'Unclaimed',
     classBonusBadge: 'class bonus', rollBadge: '🎲 roll', manualBadge: 'manual',
     winnerLabel: 'Winner:', autoOpt: '— auto —', claimantsGrp: 'Claimants',
-    otherGrp: 'Other present player', chatTextH2: 'Chat text',
+    otherGrp: 'Other alliance player', chatTextH2: 'Chat text',
     copyBtn: '📋 Copy text', confirmBtn: '✅ Confirm & save',
     copied: 'Copied ✓', copyFail: 'Copy failed — select the text manually.',
     confirmSave: 'Save this distribution to history? The session draft will be cleared.',
@@ -803,7 +873,7 @@ const I18N = {
     histScore: s => '(score ' + s + ')', cancelRec: 'Cancel',
     cancelRecConfirm: (i, n) => 'Cancel the record "' + i + ' → ' + n +
       '"? It will stop affecting anti-greed.',
-    setScoreTop: '"TOP" score', setScorePresent: 'Present score', setPClass: 'Class bonus P',
+    setScoreTop: '"TOP" score', setScorePresent: 'Regular participant score', setPClass: 'Class bonus P',
     setKPenalty: 'History penalty K', setHistoryDays: 'History window, days',
     setWWon: 'Penalty per session win',
     rarityWeightsLabel: 'Rarity weights in anti-greed:', resetDefaults: 'Reset to defaults',
@@ -891,12 +961,17 @@ function pa() { return db.perAlliance[db.activeAllianceId]; }
 function draft() {
   const data = pa();
   if (!data.draftSession) {
-    data.draftSession = { eventTypeName: '', mode: 'simple', presence: {},
+    // v3.0.0: порядок етапів підставляється за годинником — зранку першими танки й лекарі
+    data.draftSession = { eventTypeName: '',
+      firstGroup: LMCore.defaultFirstGroup(new Date().getHours()), presence: {},
       drops: [], claims: {}, overrides: {}, rollMemo: {} };
   }
   const d = data.draftSession;
   if (!d.overrides) d.overrides = {};
   if (!d.rollMemo) d.rollMemo = {};
+  if (d.firstGroup !== 'A' && d.firstGroup !== 'B') {
+    d.firstGroup = LMCore.defaultFirstGroup(new Date().getHours());
+  }
   return d;
 }
 
@@ -939,6 +1014,7 @@ function syncStickyOffset() {
 
 /* ===== Вкладка 1: Подія та вклад (ТЗ §4.2) ===== */
 // v1.9: ростер сіткою до 4 колонок, згрупований за класами
+// v3.0.0: єдиний прапорець ТОП; присутність більше не відмічається
 function rosterGridHtml(d, visible) {
   const groups = new Map();
   for (const p of visible) {
@@ -949,34 +1025,23 @@ function rosterGridHtml(d, visible) {
   for (const id of groups.keys()) if (!order.includes(id)) order.push(id);
 
   const cell = p => {
-    const pr = d.presence[p.id] || {};
-    const present = !!pr.present;
-    const dis = present ? '' : ' disabled';
-    const controls = d.mode === 'simple'
-      ? '<label class="inline small" title="' + t('topFlag') + '">' +
-        '<input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
-        (pr.top ? ' checked' : '') + dis + '> ' + t('topFlag') + '</label>'
-      : '<span class="metrics">' + [['damage', 'Damage'], ['taken', 'Taken'], ['heal', 'Heal']]
-          .map(([k, label]) => '<label>' + label +
-            '<input type="number" min="0" step="1" class="inpMetric" data-pid="' + p.id +
-            '" data-metric="' + k + '" value="' + (pr[k] > 0 ? pr[k] : '') + '"' + dis +
-            '></label>').join('') + '</span>';
-    return '<div class="roster-cell' + (present ? '' : ' absent') + '">' +
-      '<label class="inline" title="' + t('present') + '">' +
-        '<input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
-        (present ? ' checked' : '') + '>' +
-        '<span class="nick">' + escapeHtml(p.nickname) + '</span></label>' +
+    const isTop = !!(d.presence[p.id] && d.presence[p.id].top);
+    return '<div class="roster-cell' + (isTop ? '' : ' dim') + '">' +
+      '<span class="nick">' + escapeHtml(p.nickname) + '</span>' +
       (p.level ? '<span class="muted small lvl">' + p.level + '</span>' : '') +
-      controls + '</div>';
+      '<label class="inline small" title="' + t('topFlag') + '">' +
+        '<input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
+        (isTop ? ' checked' : '') + '> ' + t('topFlag') + '</label>' +
+    '</div>';
   };
 
-  return '<div class="roster-grid' + (d.mode === 'advanced' ? ' advanced' : '') + '">' +
+  return '<div class="roster-grid">' +
     order.map(cid => {
       const list = groups.get(cid);
-      const here = list.filter(p => d.presence[p.id] && d.presence[p.id].present).length;
+      const tops = list.filter(p => d.presence[p.id] && d.presence[p.id].top).length;
       return '<div class="roster-class-head">' + escapeHtml(className(cid)) +
-        '<span class="muted small">' + here + '/' + list.length + '</span></div>' +
-        list.map(cell).join('');
+        '<span class="muted small">' + t('topCount') + ' ' + tops + '/' + list.length +
+        '</span></div>' + list.map(cell).join('');
     }).join('') + '</div>';
 }
 
@@ -1000,17 +1065,16 @@ function renderTab1() {
           '<option value="' + escapeHtml(ev) + '">').join('') + '</datalist>' +
       '</div>' +
       '<div class="row" style="margin-top:8px">' +
-        '<span class="muted small">' + t('modeLabel') + '</span>' +
-        '<label class="inline"><input type="radio" name="mode" id="modeSimple" value="simple"' +
-          (d.mode === 'simple' ? ' checked' : '') + '> ' + t('modeSimple') + '</label>' +
-        '<label class="inline"><input type="radio" name="mode" id="modeAdvanced" value="advanced"' +
-          (d.mode === 'advanced' ? ' checked' : '') + '> ' + t('modeAdvanced') + '</label>' +
+        '<span class="muted small">' + t('orderLabel') + '</span>' +
+        '<label class="inline"><input type="radio" name="firstGroup" value="A"' +
+          (d.firstGroup !== 'B' ? ' checked' : '') + '> ' + t('orderMorning') + '</label>' +
+        '<label class="inline"><input type="radio" name="firstGroup" value="B"' +
+          (d.firstGroup === 'B' ? ' checked' : '') + '> ' + t('orderEvening') + '</label>' +
       '</div>' +
     '</div>' +
     '<div class="card">' +
       '<div class="row"><h2 class="grow">' + t('presenceH2') + '</h2>' +
-        '<button class="btn btn-sm" id="btnAllPresent">' + t('allPresent') + '</button>' +
-        '<button class="btn btn-sm" id="btnNonePresent">' + t('nonePresent') + '</button></div>' +
+        '<button class="btn btn-sm" id="btnClearTop">' + t('clearTop') + '</button></div>' +
       classFilterBar() +
       rosterHtml +
     '</div>';
@@ -1019,40 +1083,22 @@ function renderTab1() {
   tab.querySelector('#eventTypeInput').addEventListener('change', e => {
     draft().eventTypeName = e.target.value.trim(); save();
   });
-  tab.querySelectorAll('input[name="mode"]').forEach(r =>
-    r.addEventListener('change', e => { draft().mode = e.target.value; save(); renderTab1(); }));
-  // масові кнопки діють лише на відфільтрованих (видимих) гравців
-  tab.querySelector('#btnAllPresent')?.addEventListener('click', () => {
-    for (const p of visible) presenceOf(p.id).present = true;
-    save(); renderTab1();
-  });
-  tab.querySelector('#btnNonePresent')?.addEventListener('click', () => {
-    for (const p of visible) presenceOf(p.id).present = false;
-    save(); renderTab1();
+  tab.querySelectorAll('input[name="firstGroup"]').forEach(r =>
+    r.addEventListener('change', e => { draft().firstGroup = e.target.value; mutated(); }));
+  // масова кнопка діє лише на відфільтрованих (видимих) гравців
+  tab.querySelector('#btnClearTop')?.addEventListener('click', () => {
+    for (const p of visible) presenceOf(p.id).top = false;
+    mutated(); renderTab1();
   });
   wireClassFilter(tab, renderTab1);
-  tab.querySelectorAll('.chkPresent').forEach(c =>
-    c.addEventListener('change', e => {
-      presenceOf(e.target.dataset.pid).present = e.target.checked;
-      save(); renderTab1();
-    }));
   tab.querySelectorAll('.chkTop').forEach(c =>
     c.addEventListener('change', e => {
-      presenceOf(e.target.dataset.pid).top = e.target.checked; save();
-    }));
-  tab.querySelectorAll('.inpMetric').forEach(inp =>
-    inp.addEventListener('change', e => {
-      const v = Math.max(0, Number(e.target.value) || 0);
-      presenceOf(e.target.dataset.pid)[e.target.dataset.metric] = v;
-      e.target.value = v > 0 ? v : '';
-      save();
+      presenceOf(e.target.dataset.pid).top = e.target.checked; mutated(); renderTab1();
     }));
 }
 function presenceOf(pid) {
   const d = draft();
-  if (!d.presence[pid]) {
-    d.presence[pid] = { present: false, top: false, damage: 0, taken: 0, heal: 0 };
-  }
+  if (!d.presence[pid]) d.presence[pid] = { top: false };
   return d.presence[pid];
 }
 function className(classId) {
@@ -1078,9 +1124,9 @@ function itemDisplayName(item) {
   if (!item) return '?';
   return lang() === 'en' && item.nameEn ? item.nameEn : item.name;
 }
-function presentPlayers() {
-  const d = draft();
-  return pa().players.filter(p => p.isActive && d.presence[p.id] && d.presence[p.id].present);
+// v3.0.0: присутність не відмічається — кандидатом є кожен активний гравець складу
+function eligiblePlayers() {
+  return pa().players.filter(p => p.isActive);
 }
 function claimsOf(pid) {
   const d = draft();
@@ -1191,8 +1237,7 @@ function renderTab2() {
         '<button class="btn btn-sm" id="btnClaimAll">' + t('claimAll') + '</button>' +
         '<button class="btn btn-sm" id="btnClaimNone">' + t('claimNone') + '</button>' +
       '</div>' +
-      classFilterBar() + grid +
-      '<p class="muted small" style="margin-top:6px">' + t('claimAutoPresent') + '</p>';
+      classFilterBar() + grid;
   }
 
   document.getElementById('tab2').innerHTML =
@@ -1322,7 +1367,6 @@ function setClaim(pid, itemId, on) {
   const idx = list.indexOf(itemId);
   if (on) {
     if (idx < 0) list.push(itemId);
-    presenceOf(pid).present = true;   // заявка ⇒ присутність (ТЗ §4.3, v1.3)
   } else if (idx >= 0) {
     list.splice(idx, 1);
   }
@@ -1361,15 +1405,15 @@ function renderTab3() {
   const d = draft();
   const itemsById = byId(db.items);
   const playersById = byId(pa().players);
-  const present = presentPlayers();
-  const canCalc = present.length > 0 && d.drops.length > 0;
+  const eligible = eligiblePlayers();
+  const canCalc = eligible.length > 0 && d.drops.length > 0;
 
   let resultHtml = '';
   if (ui.calcResult) {
     const { positions, scores } = ui.calcResult;
     const topSet = LMCore.topContributors(d, scores);
     const fmt = n => (Math.round(n * 10) / 10).toString();
-    const rows = positions.map(pos => {
+    const rowHtml = pos => {
       const item = itemsById[pos.itemId];
       const winner = pos.winnerId ? playersById[pos.winnerId] : null;
       const badges =
@@ -1380,7 +1424,7 @@ function renderTab3() {
         '<option value="' + c.playerId + '"' + (c.playerId === pos.winnerId ? ' selected' : '') + '>' +
         escapeHtml(playersById[c.playerId] ? playersById[c.playerId].nickname : '?') +
         ' (' + fmt(c.priority) + ')</option>').join('');
-      const otherOpts = present
+      const otherOpts = eligible
         .filter(p => !pos.candidates.some(c => c.playerId === p.id))
         .map(p => '<option value="' + p.id + '"' + (p.id === pos.winnerId ? ' selected' : '') + '>' +
           escapeHtml(p.nickname) + '</option>').join('');
@@ -1399,10 +1443,21 @@ function renderTab3() {
           (candOpts ? '<optgroup label="' + t('claimantsGrp') + '">' + candOpts + '</optgroup>' : '') +
           (otherOpts ? '<optgroup label="' + t('otherGrp') + '">' + otherOpts + '</optgroup>' : '') +
         '</select></div></div>';
+    };
+    // v3.0.0: позиції згруповані у два етапи в порядку, заданому на вкладці 1
+    const first = d.firstGroup === 'B' ? 'B' : 'A';
+    const groupLabel = g => (g === 'A' ? t('groupA') : t('groupB'));
+    const rows = [1, 2].map(stage => {
+      const list = positions.filter(p => (p.stage === 1 ? 1 : 2) === stage);
+      if (list.length === 0) return '';
+      const g = stage === 1 ? first : (first === 'A' ? 'B' : 'A');
+      return '<h3 class="stage-head">' + t('stageHead', stage) + ' — ' +
+        escapeHtml(groupLabel(g)) + '</h3>' + list.map(rowHtml).join('');
     }).join('');
     const reportText = LMCore.formatReport({
       allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || t('defaultEvent'),
-      positions, itemsById, playersById, classesById: byId(db.classes), topSet, lang: lang() });
+      positions, itemsById, playersById, classesById: byId(db.classes), topSet,
+      lang: lang(), firstGroup: d.firstGroup });
     resultHtml =
       '<div class="card"><h2>' + t('resultH2') + '</h2>' + rows + '</div>' +
       '<div class="card"><h2>' + t('chatTextH2') + '</h2>' +
@@ -1577,10 +1632,15 @@ function renderTab4() {
   /* — Класи — */
   const classesHtml =
     '<div class="table-wrap"><table><thead><tr><th>' + t('thName') +
+      '</th><th>' + t('thGroup') +
       '</th><th>w<sub>dmg</sub></th><th>w<sub>taken</sub></th><th>w<sub>heal</sub></th><th></th></tr></thead><tbody>' +
     db.classes.map(c => '<tr' + (c.isArchived ? ' class="cancelled"' : '') + '>' +
       '<td><input type="text" class="inpClsName" data-cid="' + c.id + '" value="' +
         escapeHtml(c.name) + '" maxlength="30" style="width:130px"></td>' +
+      '<td><select class="selClsGroup" data-cid="' + c.id + '">' +
+        '<option value="A"' + (c.group === 'A' ? ' selected' : '') + '>' + t('groupA') + '</option>' +
+        '<option value="B"' + (c.group === 'A' ? '' : ' selected') + '>' + t('groupB') + '</option>' +
+      '</select></td>' +
       ['wDmg', 'wTaken', 'wHeal'].map(k =>
         '<td><input type="number" class="inpClsW" data-cid="' + c.id + '" data-w="' + k +
         '" min="0" max="1" step="0.05" value="' + c[k] + '" style="width:70px"></td>').join('') +
@@ -1880,7 +1940,7 @@ function wireTab4() {
       banner(t('classExists')); return;
     }
     db.classes.push({ id: LMCore.uuid(), name, wDmg: 0.8, wTaken: 0.1, wHeal: 0.1,
-      isArchived: false });
+      group: LMCore.groupForClassName(name), isArchived: false });
     mutated(); renderTab4();
   });
   tab.querySelectorAll('.inpClsName').forEach(inp =>
@@ -1889,6 +1949,12 @@ function wireTab4() {
       const name = e.target.value.trim();
       if (!name) { e.target.value = c.name; return; }
       c.name = name; mutated();
+    }));
+  tab.querySelectorAll('.selClsGroup').forEach(sel =>
+    sel.addEventListener('change', e => {
+      const c = db.classes.find(x => x.id === e.target.dataset.cid);
+      c.group = e.target.value === 'A' ? 'A' : 'B';
+      mutated();
     }));
   tab.querySelectorAll('.inpClsW').forEach(inp =>
     inp.addEventListener('change', e => {
