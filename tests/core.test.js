@@ -96,34 +96,19 @@ const P = {
 const PBYID = { 'p-a': P.a, 'p-b': P.b, 'p-c': P.c };
 const S = LMCore.DEFAULTS;
 
-test('computeScores: простий режим — ТОП/присутній/відсутній', () => {
-  const session = { mode: 'simple', presence: {
-    'p-a': { present: true, top: true },
-    'p-b': { present: true, top: false },
-    'p-c': { present: false, top: true }   // відсутній ігнорується попри top
-  }, drops: [], claims: {} };
-  const sc = LMCore.computeScores(session, PBYID, CLSBYID, S);
-  assert.deepStrictEqual(sc, { 'p-a': 100, 'p-b': 50 });
+test('computeScores v3: усі активні гравці мають бал, ТОП — більший', () => {
+  const session = { presence: { 'p-a': { top: true } } };
+  const scores = LMCore.computeScores(session, PBYID, S);
+  assert.deepStrictEqual(scores, { 'p-a': 100, 'p-b': 50, 'p-c': 50 });
 });
-test('computeScores: розширений — нормалізація і ваги класу', () => {
-  const session = { mode: 'advanced', presence: {
-    'p-a': { present: true, damage: 50, taken: 200, heal: 0 },
-    'p-b': { present: true, damage: 0, taken: 100, heal: 300 },
-    'p-c': { present: true, damage: 100, taken: 0, heal: 0 }
-  }, drops: [], claims: {} };
-  const sc = LMCore.computeScores(session, PBYID, CLSBYID, S);
-  // maxD=100, maxT=200, maxH=300
-  assert.strictEqual(sc['p-a'], 100 * (0.2 * 0.5 + 0.7 * 1 + 0.1 * 0));   // 80
-  assert.strictEqual(sc['p-b'], 100 * (0.1 * 0 + 0.1 * 0.5 + 0.8 * 1));   // 85
-  assert.strictEqual(sc['p-c'], 100 * (0.8 * 1 + 0.1 * 0 + 0.1 * 0));     // 80
+test('computeScores v3: вибулий гравець балу не отримує', () => {
+  const players = { ...PBYID, 'p-b': { ...P.b, isActive: false } };
+  const scores = LMCore.computeScores({ presence: {} }, players, S);
+  assert.deepStrictEqual(Object.keys(scores).sort(), ['p-a', 'p-c']);
 });
-test('computeScores: нульові максимуми не дають NaN (ТЗ §7.2)', () => {
-  const session = { mode: 'advanced', presence: {
-    'p-a': { present: true, damage: 0, taken: 0, heal: 0 },
-    'p-b': { present: true, damage: 0, taken: 0, heal: 0 }
-  }, drops: [], claims: {} };
-  assert.deepStrictEqual(LMCore.computeScores(session, PBYID, CLSBYID, S),
-    { 'p-a': 0, 'p-b': 0 });
+test('computeScores v3: порожня чернетка — усі по 50', () => {
+  const scores = LMCore.computeScores({}, PBYID, S);
+  assert.deepStrictEqual(scores, { 'p-a': 50, 'p-b': 50, 'p-c': 50 });
 });
 
 // ---- Task 4 ----
@@ -156,8 +141,8 @@ test('historyLoad: вікно N днів, cancelled і рідкість (ТЗ §
   assert.strictEqual(LMCore.historyLoad(hist, ITBYID, 'p-a', NOW, S), 8 + 3);
 });
 test('distribute: клас-бонус перемагає при рівному вкладі (крит. приймання 4)', () => {
-  const session = { mode: 'simple', eventTypeName: 'Бос',
-    presence: { 'p-a': { present: true, top: false }, 'p-c': { present: true, top: false } },
+  const session = { eventTypeName: 'Бос',
+    presence: { 'p-a': { top: false }, 'p-c': { top: false } },
     drops: [{ itemId: 'i-sword', quantity: 1 }],
     claims: { 'p-a': ['i-sword'], 'p-c': ['i-sword'] } };
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
@@ -173,8 +158,8 @@ test('distribute: клас-бонус перемагає при рівному �
 });
 test('distribute: анти-жадібність — вчорашня легендарка програє (крит. 5)', () => {
   const hist = [mkRec('p-a', 'i-sword', '2026-08-10T00:00:00.000Z', 1)];
-  const session = { mode: 'simple', eventTypeName: 'Бос',
-    presence: { 'p-a': { present: true, top: false }, 'p-c': { present: true, top: false } },
+  const session = { eventTypeName: 'Бос',
+    presence: { 'p-a': { top: false }, 'p-c': { top: false } },
     drops: [{ itemId: 'i-box', quantity: 1 }],
     claims: { 'p-a': ['i-box'], 'p-c': ['i-box'] } };
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
@@ -183,8 +168,8 @@ test('distribute: анти-жадібність — вчорашня леген�
   assert.strictEqual(positions[0].winnerId, 'p-c');   // p-a: 50−10·8=−30
 });
 test('distribute: порядок за рідкістю, одна штука на гравця, вільний залишок', () => {
-  const session = { mode: 'simple', eventTypeName: 'Бос',
-    presence: { 'p-a': { present: true, top: false }, 'p-b': { present: true, top: false } },
+  const session = { eventTypeName: 'Бос',
+    presence: { 'p-a': { top: false }, 'p-b': { top: false } },
     drops: [{ itemId: 'i-box', quantity: 3 }, { itemId: 'i-sword', quantity: 1 }],
     claims: { 'p-a': ['i-box', 'i-sword'], 'p-b': ['i-box'] } };
   const { positions } = LMCore.distribute({ session, playersById: PBYID,
@@ -202,8 +187,8 @@ test('distribute: порядок за рідкістю, одна штука на
   assert.strictEqual(positions[3].winnerId, null);
 });
 test('distribute: нічия — рол за rng, rollMemo стабілізує перерахунок (крит. 8)', () => {
-  const session = { mode: 'simple', eventTypeName: 'Бос',
-    presence: { 'p-a': { present: true, top: false }, 'p-b': { present: true, top: false } },
+  const session = { eventTypeName: 'Бос',
+    presence: { 'p-a': { top: false }, 'p-b': { top: false } },
     drops: [{ itemId: 'i-box', quantity: 1 }],
     claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } };
   const ctx = { session, playersById: PBYID, classesById: CLSBYID, itemsById: ITBYID,
@@ -219,8 +204,8 @@ test('distribute: нічия — рол за rng, rollMemo стабілізує 
   assert.strictEqual(r2.positions[0].rolled, true);
 });
 test('distribute: override — ручний переможець поза претендентами, перерахунок нижче', () => {
-  const session = { mode: 'simple', eventTypeName: 'Бос',
-    presence: { 'p-a': { present: true, top: true }, 'p-b': { present: true, top: false } },
+  const session = { eventTypeName: 'Бос',
+    presence: { 'p-a': { top: true }, 'p-b': { top: false } },
     drops: [{ itemId: 'i-sword', quantity: 1 }, { itemId: 'i-box', quantity: 1 }],
     claims: { 'p-a': ['i-sword', 'i-box'] } };   // p-b нічого не просив
   const base = { session, playersById: PBYID, classesById: CLSBYID, itemsById: ITBYID,
@@ -238,13 +223,11 @@ test('distribute: override — ручний переможець поза пре
 });
 
 // ---- Task 5 ----
-test('topContributors: простий — прапорці, розширений — максимум балу', () => {
-  const simple = { mode: 'simple', presence: {
-    'p-a': { present: true, top: true }, 'p-b': { present: true, top: false } } };
-  assert.deepStrictEqual([...LMCore.topContributors(simple, { 'p-a': 100, 'p-b': 50 })], ['p-a']);
-  const adv = { mode: 'advanced', presence: {} };
-  assert.deepStrictEqual([...LMCore.topContributors(adv, { 'p-a': 80, 'p-b': 85 })], ['p-b']);
-  assert.deepStrictEqual([...LMCore.topContributors(adv, {})], []);
+test('topContributors v3: лише прапорець ТОП, режимів більше немає', () => {
+  const session = { presence: { 'p-a': { top: true }, 'p-b': { top: false } } };
+  const scores = LMCore.computeScores(session, PBYID, S);
+  assert.deepStrictEqual([...LMCore.topContributors(session, scores)], ['p-a']);
+  assert.deepStrictEqual([...LMCore.topContributors({ presence: {} }, scores)], []);
 });
 test('formatReport: дефолт без lang — російська, побайтово (ТЗ §6)', () => {
   const cls6 = [mkClass('c1', 'Танк', 0.2, 0.7, 0.1), mkClass('c2', 'Маг', 0.8, 0.1, 0.1),
@@ -504,18 +487,18 @@ test('applyRoster: Жрец отримує хільські ваги', () => {
 // ---- v1.7: захист від застарілих позначок ----
 test('computeScores: деактивований гравець із застарілою присутністю не рахується', () => {
   const players = { 'p-a': { ...P.a }, 'p-b': { ...P.b, isActive: false } };
-  const session = { mode: 'simple', presence: {
-    'p-a': { present: true, top: false },
-    'p-b': { present: true, top: true }   // стара позначка, гравець уже вибув
+  const session = { presence: {
+    'p-a': { top: false },
+    'p-b': { top: true }   // стара позначка, гравець уже вибув
   }, drops: [], claims: {} };
-  assert.deepStrictEqual(LMCore.computeScores(session, players, CLSBYID, S),
+  assert.deepStrictEqual(LMCore.computeScores(session, players, S),
     { 'p-a': 50 });
 });
 test('distribute: вибулий претендент не бере участі', () => {
   const players = { 'p-a': { ...P.a }, 'p-b': { ...P.b, isActive: false } };
-  const session = { mode: 'simple', eventTypeName: 'Бос',
-    presence: { 'p-a': { present: true, top: false },
-                'p-b': { present: true, top: true } },
+  const session = { eventTypeName: 'Бос',
+    presence: { 'p-a': { top: false },
+                'p-b': { top: true } },
     drops: [{ itemId: 'i-box', quantity: 1 }],
     claims: { 'p-a': ['i-box'], 'p-b': ['i-box'] } };
   const { positions } = LMCore.distribute({ session, playersById: players,
