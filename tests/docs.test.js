@@ -183,5 +183,27 @@ test('межа «ранок/вечір» у документі збігаєть�
   assert.strictEqual(LMCore.defaultFirstGroup(bound), 'B');
 });
 
+// ---- 13. Ручний порядок пікера покриває весь каталог ----
+test('PICKER_ORDER містить кожен uid каталогу і не містить зайвих', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'loot-manager.html'), 'utf8');
+  const block = html.match(/const PICKER_ORDER = \[([\s\S]*?)\];/);
+  assert.ok(block, 'константу PICKER_ORDER не знайдено');
+  const inCode = block[1].replace(/\/\/[^\n]*/g, '')      // прибираємо коментарі ярусів
+    .split(',').map(s => s.trim()).filter(Boolean).map(Number);
+  assert.deepStrictEqual(inCode.filter(n => !Number.isInteger(n)), [],
+    'у PICKER_ORDER є нечислові значення');
+  assert.strictEqual(new Set(inCode).size, inCode.length, 'у PICKER_ORDER є дублі uid');
+
+  const catalogPath = path.join(ROOT, 'data/loot.json');
+  if (!fs.existsSync(catalogPath)) return;              // каталог веде інша сесія — може бути відсутній
+  const uids = JSON.parse(fs.readFileSync(catalogPath, 'utf8')).map(x => x.uid);
+  const missing = uids.filter(u => !inCode.includes(u));
+  const extra = inCode.filter(u => !uids.includes(u));
+  assert.deepStrictEqual(missing, [],
+    'нові предмети каталогу без місця в PICKER_ORDER (підуть у кінець пікера): uid ' + missing.join(', '));
+  assert.deepStrictEqual(extra, [],
+    'PICKER_ORDER називає uid, яких у каталозі немає: ' + extra.join(', '));
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
