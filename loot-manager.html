@@ -122,16 +122,12 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
   border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .roster-row:last-child { border-bottom: 0; }
 .roster-row .nick { min-width: 130px; font-weight: 600; }
-.roster-row.absent .nick { color: var(--muted); font-weight: 400; }
 
 /* Ростер вкладки 1: до 4 колонок, згруповано за класами (v1.9) */
 .roster-grid { display: grid; grid-template-columns: 1fr; gap: 2px 14px; }
 @media (min-width: 620px)  { .roster-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (min-width: 940px)  { .roster-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (min-width: 1180px) { .roster-grid { grid-template-columns: repeat(4, 1fr); } }
-.roster-grid.advanced { grid-template-columns: 1fr; }
-@media (min-width: 780px)  { .roster-grid.advanced { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1180px) { .roster-grid.advanced { grid-template-columns: repeat(3, 1fr); } }
 .roster-class-head {
   grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px;
   margin: 12px 0 2px; padding-bottom: 3px; border-bottom: 1px solid var(--line);
@@ -141,16 +137,14 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 .roster-cell { display: flex; align-items: center; gap: 8px; padding: 3px 2px;
   min-width: 0; flex-wrap: nowrap; }
 .roster-cell > label.inline { flex: 1 1 auto; min-width: 0; }   /* нік стискається… */
+.roster-cell > .nick { flex: 1 1 auto; min-width: 0; }          /* …і як голий span (вкладка 1) */
 .roster-cell .nick { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
-.roster-cell.absent .nick, .roster-cell.dim .nick { color: var(--muted); font-weight: 400; }
-.roster-cell .lvl, .roster-cell > label.inline.small, .roster-cell .metrics {
+.roster-cell.dim .nick { color: var(--muted); font-weight: 400; }
+.roster-cell .lvl, .roster-cell > label.inline.small {
   flex: 0 0 auto;                                               /* …решта не переноситься */
 }
 .roster-cell .lvl { font-variant-numeric: tabular-nums; }
-.roster-grid.advanced .roster-cell { flex-wrap: wrap; }         /* три числових поля — можна в 2 ряди */
-.metrics { display: flex; gap: 6px; flex-wrap: wrap; }
-.metrics label { display: flex; flex-direction: column; font-size: 0.72rem; color: var(--muted); }
 
 .pos-row { padding: 9px 4px; border-bottom: 1px solid var(--line); }
 .pos-row:last-child { border-bottom: 0; }
@@ -699,10 +693,13 @@ const I18N = {
     saveFail: m => 'Не удалось сохранить (хранилище переполнено?): ' + m +
       ' Сделайте экспорт JSON во вкладке 4!',
     eventH2: 'Событие', eventPh: 'Тип события (напр., Вторжение монстров)',
-    modeLabel: 'Режим вклада:', modeSimple: 'Простой (ТОП)', modeAdvanced: 'Расширенный (числа)',
-    presenceH2: 'Присутствующие и вклад', allPresent: 'Все присутствуют', nonePresent: 'Снять всех',
+    orderLabel: 'Порядок этапов:', orderMorning: 'Утро: сначала танки и лекари',
+    orderEvening: 'Вечер: сначала ДД', clearTop: 'Снять все ТОП',
+    topCount: 'ТОП', stageHead: n => 'Этап ' + n,
+    groupA: 'Танки и лекари', groupB: 'ДД', thGroup: 'Группа',
+    presenceH2: 'Состав и ТОП вклад',
     classFilterLabel: 'Класс:', filterAll: 'Все',
-    present: 'Присутствует', topFlag: 'ТОП',
+    topFlag: 'ТОП',
     noPlayers: 'Нет активных игроков. Добавьте их во вкладке «4. Базы и настройки».',
     filterEmpty: 'Игроков этого класса нет.',
     dropsH2: 'Что выпало', itemPh: 'Название предмета', pcsShort: 'шт.', add: 'Добавить',
@@ -713,15 +710,14 @@ const I18N = {
     whoWants: n => 'Кто хочет: ' + n, claimAll: 'Отметить всех', claimNone: 'Снять всех',
     addLootToggle: '➕ Добавить добычу из каталога',
     claimsTotal: n => 'заявок: ' + n, pickItemHint: 'Выберите предмет выше.',
-    claimAutoPresent: 'Отметка «хочет» автоматически помечает игрока присутствующим (вклад — во вкладке 1).',
     addLootFirst: 'Добавьте добычу выше, чтобы проставить заявки.', playerTh: 'Игрок',
     enterItemName: 'Введите название предмета.', itemExists: 'Предмет с таким названием уже существует.',
     calc: '⚖️ Рассчитать распределение',
-    calcHint: 'Нужны присутствующие игроки (вкладка 1) и добыча (вкладка 2).',
+    calcHint: 'Нужны состав альянса (вкладка 4) и добыча (вкладка 2).',
     resultH2: 'Результат', copyN: n => 'штука ' + n, freeLeft: 'Свободный остаток',
     classBonusBadge: 'класс-бонус', rollBadge: '🎲 ролл', manualBadge: 'ручное',
     winnerLabel: 'Победитель:', autoOpt: '— авто —', claimantsGrp: 'Претенденты',
-    otherGrp: 'Другой присутствующий игрок', chatTextH2: 'Текст для чата',
+    otherGrp: 'Другой игрок альянса', chatTextH2: 'Текст для чата',
     copyBtn: '📋 Скопировать текст', confirmBtn: '✅ Подтвердить и сохранить',
     copied: 'Скопировано ✓', copyFail: 'Не удалось скопировать — выделите текст вручную.',
     confirmSave: 'Сохранить распределение в историю? Черновик сеанса будет очищен.',
@@ -769,7 +765,7 @@ const I18N = {
     histScore: s => '(балл ' + s + ')', cancelRec: 'Отменить',
     cancelRecConfirm: (i, n) => 'Отменить запись «' + i + ' → ' + n +
       '»? Она перестанет влиять на анти-жадность.',
-    setScoreTop: 'Балл «ТОП»', setScorePresent: 'Балл присутствующего', setPClass: 'Класс-бонус P',
+    setScoreTop: 'Балл «ТОП»', setScorePresent: 'Балл обычного участника', setPClass: 'Класс-бонус P',
     setKPenalty: 'Штраф истории K', setHistoryDays: 'Окно истории, дней',
     setWWon: 'Штраф за выигрыш в сеансе',
     rarityWeightsLabel: 'Веса редкости в анти-жадности:', resetDefaults: 'Сбросить к дефолтам',
@@ -790,10 +786,13 @@ const I18N = {
     dbCorrupt: m => 'Database was corrupted, a new one was created. Error: ' + m,
     saveFail: m => 'Failed to save (storage full?): ' + m + ' Export JSON on tab 4!',
     eventH2: 'Event', eventPh: 'Event type (e.g., Monster Invasion)',
-    modeLabel: 'Contribution mode:', modeSimple: 'Simple (TOP)', modeAdvanced: 'Advanced (numbers)',
-    presenceH2: 'Attendance & contribution', allPresent: 'All present', nonePresent: 'Clear all',
+    orderLabel: 'Stage order:', orderMorning: 'Morning: tanks & healers first',
+    orderEvening: 'Evening: DPS first', clearTop: 'Clear all TOP',
+    topCount: 'TOP', stageHead: n => 'Stage ' + n,
+    groupA: 'Tanks & healers', groupB: 'DPS', thGroup: 'Group',
+    presenceH2: 'Roster & TOP contribution',
     classFilterLabel: 'Class:', filterAll: 'All',
-    present: 'Present', topFlag: 'TOP',
+    topFlag: 'TOP',
     noPlayers: 'No active players. Add them on the "4. Data & Settings" tab.',
     filterEmpty: 'No players of this class.',
     dropsH2: 'Drops', itemPh: 'Item name', pcsShort: 'pcs', add: 'Add',
@@ -804,15 +803,14 @@ const I18N = {
     whoWants: n => 'Who wants: ' + n, claimAll: 'Mark all', claimNone: 'Clear all',
     addLootToggle: '➕ Add loot from the catalog',
     claimsTotal: n => 'claims: ' + n, pickItemHint: 'Pick an item above.',
-    claimAutoPresent: 'Checking a claim automatically marks the player as present (contribution is on tab 1).',
     addLootFirst: 'Add loot above to set claims.', playerTh: 'Player',
     enterItemName: 'Enter an item name.', itemExists: 'An item with this name already exists.',
     calc: '⚖️ Calculate distribution',
-    calcHint: 'Need present players (tab 1) and loot (tab 2).',
+    calcHint: 'Need an alliance roster (tab 4) and loot (tab 2).',
     resultH2: 'Result', copyN: n => 'copy ' + n, freeLeft: 'Unclaimed',
     classBonusBadge: 'class bonus', rollBadge: '🎲 roll', manualBadge: 'manual',
     winnerLabel: 'Winner:', autoOpt: '— auto —', claimantsGrp: 'Claimants',
-    otherGrp: 'Other present player', chatTextH2: 'Chat text',
+    otherGrp: 'Other alliance player', chatTextH2: 'Chat text',
     copyBtn: '📋 Copy text', confirmBtn: '✅ Confirm & save',
     copied: 'Copied ✓', copyFail: 'Copy failed — select the text manually.',
     confirmSave: 'Save this distribution to history? The session draft will be cleared.',
@@ -860,7 +858,7 @@ const I18N = {
     histScore: s => '(score ' + s + ')', cancelRec: 'Cancel',
     cancelRecConfirm: (i, n) => 'Cancel the record "' + i + ' → ' + n +
       '"? It will stop affecting anti-greed.',
-    setScoreTop: '"TOP" score', setScorePresent: 'Present score', setPClass: 'Class bonus P',
+    setScoreTop: '"TOP" score', setScorePresent: 'Regular participant score', setPClass: 'Class bonus P',
     setKPenalty: 'History penalty K', setHistoryDays: 'History window, days',
     setWWon: 'Penalty per session win',
     rarityWeightsLabel: 'Rarity weights in anti-greed:', resetDefaults: 'Reset to defaults',
@@ -948,12 +946,17 @@ function pa() { return db.perAlliance[db.activeAllianceId]; }
 function draft() {
   const data = pa();
   if (!data.draftSession) {
-    data.draftSession = { eventTypeName: '', mode: 'simple', presence: {},
+    // v3.0.0: порядок етапів підставляється за годинником — зранку першими танки й лекарі
+    data.draftSession = { eventTypeName: '',
+      firstGroup: LMCore.defaultFirstGroup(new Date().getHours()), presence: {},
       drops: [], claims: {}, overrides: {}, rollMemo: {} };
   }
   const d = data.draftSession;
   if (!d.overrides) d.overrides = {};
   if (!d.rollMemo) d.rollMemo = {};
+  if (d.firstGroup !== 'A' && d.firstGroup !== 'B') {
+    d.firstGroup = LMCore.defaultFirstGroup(new Date().getHours());
+  }
   return d;
 }
 
@@ -996,6 +999,7 @@ function syncStickyOffset() {
 
 /* ===== Вкладка 1: Подія та вклад (ТЗ §4.2) ===== */
 // v1.9: ростер сіткою до 4 колонок, згрупований за класами
+// v3.0.0: єдиний прапорець ТОП; присутність більше не відмічається
 function rosterGridHtml(d, visible) {
   const groups = new Map();
   for (const p of visible) {
@@ -1006,34 +1010,23 @@ function rosterGridHtml(d, visible) {
   for (const id of groups.keys()) if (!order.includes(id)) order.push(id);
 
   const cell = p => {
-    const pr = d.presence[p.id] || {};
-    const present = !!pr.present;
-    const dis = present ? '' : ' disabled';
-    const controls = d.mode === 'simple'
-      ? '<label class="inline small" title="' + t('topFlag') + '">' +
-        '<input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
-        (pr.top ? ' checked' : '') + dis + '> ' + t('topFlag') + '</label>'
-      : '<span class="metrics">' + [['damage', 'Damage'], ['taken', 'Taken'], ['heal', 'Heal']]
-          .map(([k, label]) => '<label>' + label +
-            '<input type="number" min="0" step="1" class="inpMetric" data-pid="' + p.id +
-            '" data-metric="' + k + '" value="' + (pr[k] > 0 ? pr[k] : '') + '"' + dis +
-            '></label>').join('') + '</span>';
-    return '<div class="roster-cell' + (present ? '' : ' absent') + '">' +
-      '<label class="inline" title="' + t('present') + '">' +
-        '<input type="checkbox" class="chkPresent" data-pid="' + p.id + '"' +
-        (present ? ' checked' : '') + '>' +
-        '<span class="nick">' + escapeHtml(p.nickname) + '</span></label>' +
+    const isTop = !!(d.presence[p.id] && d.presence[p.id].top);
+    return '<div class="roster-cell' + (isTop ? '' : ' dim') + '">' +
+      '<span class="nick">' + escapeHtml(p.nickname) + '</span>' +
       (p.level ? '<span class="muted small lvl">' + p.level + '</span>' : '') +
-      controls + '</div>';
+      '<label class="inline small" title="' + t('topFlag') + '">' +
+        '<input type="checkbox" class="chkTop" data-pid="' + p.id + '"' +
+        (isTop ? ' checked' : '') + '> ' + t('topFlag') + '</label>' +
+    '</div>';
   };
 
-  return '<div class="roster-grid' + (d.mode === 'advanced' ? ' advanced' : '') + '">' +
+  return '<div class="roster-grid">' +
     order.map(cid => {
       const list = groups.get(cid);
-      const here = list.filter(p => d.presence[p.id] && d.presence[p.id].present).length;
+      const tops = list.filter(p => d.presence[p.id] && d.presence[p.id].top).length;
       return '<div class="roster-class-head">' + escapeHtml(className(cid)) +
-        '<span class="muted small">' + here + '/' + list.length + '</span></div>' +
-        list.map(cell).join('');
+        '<span class="muted small">' + t('topCount') + ' ' + tops + '/' + list.length +
+        '</span></div>' + list.map(cell).join('');
     }).join('') + '</div>';
 }
 
@@ -1057,17 +1050,16 @@ function renderTab1() {
           '<option value="' + escapeHtml(ev) + '">').join('') + '</datalist>' +
       '</div>' +
       '<div class="row" style="margin-top:8px">' +
-        '<span class="muted small">' + t('modeLabel') + '</span>' +
-        '<label class="inline"><input type="radio" name="mode" id="modeSimple" value="simple"' +
-          (d.mode === 'simple' ? ' checked' : '') + '> ' + t('modeSimple') + '</label>' +
-        '<label class="inline"><input type="radio" name="mode" id="modeAdvanced" value="advanced"' +
-          (d.mode === 'advanced' ? ' checked' : '') + '> ' + t('modeAdvanced') + '</label>' +
+        '<span class="muted small">' + t('orderLabel') + '</span>' +
+        '<label class="inline"><input type="radio" name="firstGroup" value="A"' +
+          (d.firstGroup !== 'B' ? ' checked' : '') + '> ' + t('orderMorning') + '</label>' +
+        '<label class="inline"><input type="radio" name="firstGroup" value="B"' +
+          (d.firstGroup === 'B' ? ' checked' : '') + '> ' + t('orderEvening') + '</label>' +
       '</div>' +
     '</div>' +
     '<div class="card">' +
       '<div class="row"><h2 class="grow">' + t('presenceH2') + '</h2>' +
-        '<button class="btn btn-sm" id="btnAllPresent">' + t('allPresent') + '</button>' +
-        '<button class="btn btn-sm" id="btnNonePresent">' + t('nonePresent') + '</button></div>' +
+        '<button class="btn btn-sm" id="btnClearTop">' + t('clearTop') + '</button></div>' +
       classFilterBar() +
       rosterHtml +
     '</div>';
@@ -1076,40 +1068,22 @@ function renderTab1() {
   tab.querySelector('#eventTypeInput').addEventListener('change', e => {
     draft().eventTypeName = e.target.value.trim(); save();
   });
-  tab.querySelectorAll('input[name="mode"]').forEach(r =>
-    r.addEventListener('change', e => { draft().mode = e.target.value; save(); renderTab1(); }));
-  // масові кнопки діють лише на відфільтрованих (видимих) гравців
-  tab.querySelector('#btnAllPresent')?.addEventListener('click', () => {
-    for (const p of visible) presenceOf(p.id).present = true;
-    save(); renderTab1();
-  });
-  tab.querySelector('#btnNonePresent')?.addEventListener('click', () => {
-    for (const p of visible) presenceOf(p.id).present = false;
-    save(); renderTab1();
+  tab.querySelectorAll('input[name="firstGroup"]').forEach(r =>
+    r.addEventListener('change', e => { draft().firstGroup = e.target.value; mutated(); }));
+  // масова кнопка діє лише на відфільтрованих (видимих) гравців
+  tab.querySelector('#btnClearTop')?.addEventListener('click', () => {
+    for (const p of visible) presenceOf(p.id).top = false;
+    mutated(); renderTab1();
   });
   wireClassFilter(tab, renderTab1);
-  tab.querySelectorAll('.chkPresent').forEach(c =>
-    c.addEventListener('change', e => {
-      presenceOf(e.target.dataset.pid).present = e.target.checked;
-      save(); renderTab1();
-    }));
   tab.querySelectorAll('.chkTop').forEach(c =>
     c.addEventListener('change', e => {
-      presenceOf(e.target.dataset.pid).top = e.target.checked; save();
-    }));
-  tab.querySelectorAll('.inpMetric').forEach(inp =>
-    inp.addEventListener('change', e => {
-      const v = Math.max(0, Number(e.target.value) || 0);
-      presenceOf(e.target.dataset.pid)[e.target.dataset.metric] = v;
-      e.target.value = v > 0 ? v : '';
-      save();
+      presenceOf(e.target.dataset.pid).top = e.target.checked; mutated(); renderTab1();
     }));
 }
 function presenceOf(pid) {
   const d = draft();
-  if (!d.presence[pid]) {
-    d.presence[pid] = { present: false, top: false, damage: 0, taken: 0, heal: 0 };
-  }
+  if (!d.presence[pid]) d.presence[pid] = { top: false };
   return d.presence[pid];
 }
 function className(classId) {
@@ -1135,9 +1109,9 @@ function itemDisplayName(item) {
   if (!item) return '?';
   return lang() === 'en' && item.nameEn ? item.nameEn : item.name;
 }
-function presentPlayers() {
-  const d = draft();
-  return pa().players.filter(p => p.isActive && d.presence[p.id] && d.presence[p.id].present);
+// v3.0.0: присутність не відмічається — кандидатом є кожен активний гравець складу
+function eligiblePlayers() {
+  return pa().players.filter(p => p.isActive);
 }
 function claimsOf(pid) {
   const d = draft();
@@ -1248,8 +1222,7 @@ function renderTab2() {
         '<button class="btn btn-sm" id="btnClaimAll">' + t('claimAll') + '</button>' +
         '<button class="btn btn-sm" id="btnClaimNone">' + t('claimNone') + '</button>' +
       '</div>' +
-      classFilterBar() + grid +
-      '<p class="muted small" style="margin-top:6px">' + t('claimAutoPresent') + '</p>';
+      classFilterBar() + grid;
   }
 
   document.getElementById('tab2').innerHTML =
@@ -1379,7 +1352,6 @@ function setClaim(pid, itemId, on) {
   const idx = list.indexOf(itemId);
   if (on) {
     if (idx < 0) list.push(itemId);
-    presenceOf(pid).present = true;   // заявка ⇒ присутність (ТЗ §4.3, v1.3)
   } else if (idx >= 0) {
     list.splice(idx, 1);
   }
@@ -1418,8 +1390,8 @@ function renderTab3() {
   const d = draft();
   const itemsById = byId(db.items);
   const playersById = byId(pa().players);
-  const present = presentPlayers();
-  const canCalc = present.length > 0 && d.drops.length > 0;
+  const eligible = eligiblePlayers();
+  const canCalc = eligible.length > 0 && d.drops.length > 0;
 
   let resultHtml = '';
   if (ui.calcResult) {
@@ -1437,7 +1409,7 @@ function renderTab3() {
         '<option value="' + c.playerId + '"' + (c.playerId === pos.winnerId ? ' selected' : '') + '>' +
         escapeHtml(playersById[c.playerId] ? playersById[c.playerId].nickname : '?') +
         ' (' + fmt(c.priority) + ')</option>').join('');
-      const otherOpts = present
+      const otherOpts = eligible
         .filter(p => !pos.candidates.some(c => c.playerId === p.id))
         .map(p => '<option value="' + p.id + '"' + (p.id === pos.winnerId ? ' selected' : '') + '>' +
           escapeHtml(p.nickname) + '</option>').join('');
