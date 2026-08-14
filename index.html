@@ -259,9 +259,10 @@ const LMCore = (() => {
   // штрафи й ваги рідкості описували те саме «хто давно нічого не брав», але
   // вимагали десяти чисел і не піддавались поясненню в чаті альянсу.
   const DEFAULTS = Object.freeze({
-    useTop: true, webhookUrl: '', language: 'ru'
+    useTop: true, language: 'ru', discordFormat: 'text'
   });
   const LANGS = Object.freeze(['ru', 'en']);
+  const DISCORD_FORMATS = Object.freeze(['text', 'embed']);
   const RARITY_RANK = Object.freeze({ common: 1, rare: 2, epic: 3, legendary: 4 });
   function uuid() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -294,13 +295,13 @@ const LMCore = (() => {
   function defaultFirstGroup(hour) { return Number(hour) < 15 ? 'A' : 'B'; }
 
   function emptyAllianceData() {
-    return { players: [], history: [], eventTypes: [], draftSession: null };
+    return { players: [], history: [], eventTypes: [], draftSession: null, lastReport: null };
   }
 
   function emptyDb(nowISO) {
-    const alliance = { id: uuid(), name: 'Мой альянс', createdAt: nowISO };
+    const alliance = { id: uuid(), name: 'Мой альянс', createdAt: nowISO, webhookUrl: '' };
     return {
-      schemaVersion: 4,
+      schemaVersion: 5,
       activeAllianceId: alliance.id,
       settings: defaultSettings(),
       classes: CLASS_SEED.map(([name, wDmg, wTaken, wHeal]) =>
@@ -351,7 +352,29 @@ const LMCore = (() => {
         language: LANGS.includes(s3.language) ? s3.language : 'ru' };
       db.schemaVersion = 4;
     }
-    if (db.schemaVersion === 4) return { ok: true, db };
+    if (db.schemaVersion === 4) {
+      // v5.0.0 (Етап 2): адреса вебхука переїжджає з глобальних налаштувань в альянс.
+      // Канал у кожного альянсу свій: глобальне поле означало б, що після перемикання
+      // альянсу звіт іде чужим людям — помилку видно вже після відправки.
+      const s4 = db.settings || {};
+      const legacy = typeof s4.webhookUrl === 'string' ? s4.webhookUrl : '';
+      for (const a of db.alliances || []) {
+        if (typeof a.webhookUrl !== 'string') a.webhookUrl = legacy;
+      }
+      for (const paData of Object.values(db.perAlliance || {})) {
+        if (paData.lastReport === undefined) paData.lastReport = null;
+        for (const p of paData.players || []) {
+          if (p.discordId === undefined) p.discordId = null;
+        }
+      }
+      db.settings = {
+        useTop: s4.useTop !== false,
+        language: LANGS.includes(s4.language) ? s4.language : 'ru',
+        discordFormat: DISCORD_FORMATS.includes(s4.discordFormat) ? s4.discordFormat : 'text'
+      };
+      db.schemaVersion = 5;
+    }
+    if (db.schemaVersion === 5) return { ok: true, db };
     return { ok: false, error: 'Непідтримувана версія схеми: ' + db.schemaVersion };
   }
 
@@ -384,6 +407,23 @@ const LMCore = (() => {
       }
     }
     return migrate(raw);
+  }
+
+  // Адреса вебхука — фактично пароль на запис у канал, а файл бекапу пересилають.
+  // У знімок вона не потрапляє; discordId гравців не секрет і лишається як є.
+  function exportSnapshot(db) {
+    const copy = JSON.parse(JSON.stringify(db));
+    for (const a of copy.alliances || []) a.webhookUrl = '';
+    return copy;
+  }
+  // Порожнє поле у файлі означає «не задано», а не «очистити»: імпорт не повинен
+  // забирати робочу адресу. Зіставлення за id альянсу.
+  function keepLocalWebhooks(incoming, current) {
+    const local = new Map((current.alliances || []).map(a => [a.id, a.webhookUrl || '']));
+    for (const a of incoming.alliances || []) {
+      if (!a.webhookUrl) a.webhookUrl = local.get(a.id) || '';
+    }
+    return incoming;
   }
 
   // v4.0.0: балів більше немає — черга будується за кількістю вже отриманого.
@@ -599,6 +639,31 @@ const LMCore = (() => {
     return { addedPlayers, updatedPlayers, addedClasses, deactivated };
   }
 
+  // Discord ID — 17–20 цифр (snowflake). Рядок «Нік = 123…»; дефіс роздільником не
+  // беремо: він трапляється всередині ніків.
+  const DISCORD_ID_RE = /^\d{17,20}$/;
+  function parseDiscordIds(text) {
+    const pairs = [], bad = [];
+    for (const raw of String(text == null ? '' : text).split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      const m = line.match(/^(.+?)\s*(?:=|—|:|\t)\s*(\S+)$/);
+      if (!m || !DISCORD_ID_RE.test(m[2])) { bad.push(line); continue; }
+      pairs.push({ nickname: m[1].trim(), discordId: m[2] });
+    }
+    return { pairs, bad };
+  }
+  function applyDiscordIds(players, pairs) {
+    let updated = 0; const unknown = [];
+    for (const pr of pairs) {
+      const p = players.find(x =>
+        x.nickname.trim().toLowerCase() === pr.nickname.trim().toLowerCase());
+      if (!p) { unknown.push(pr.nickname); continue; }
+      p.discordId = pr.discordId; updated++;
+    }
+    return { updated, unknown };
+  }
+
   // v1.4: інтеграція з каталогом предметів (data/loot.json інструмента вилучення зображень)
   function mapCatalogRarity(n) {
     if (n >= 4) return 'legendary';
@@ -659,6 +724,23 @@ const LMCore = (() => {
           footer: 'Thanks everyone for participating! Items are waiting in the alliance shop.' }
   });
 
+  // v5.0.0: рядки повідомлень Discord. Правила ті самі, що в §6: фіксований текст —
+  // мовою інтерфейсу, дані користувача — як введені.
+  const DISCORD_I18N = Object.freeze({
+    ru: { announce: (a, e) => '📢 [АЛЬЯНС: ' + a + '] СБОР ЗАЯВОК (' + e + ')',
+          remind: (a, e) => '⏳ [АЛЬЯНС: ' + a + '] НАПОМИНАНИЕ О ЗАЯВКАХ (' + e + ')',
+          pcs: 'шт.', claims: n => 'заявок: ' + n,
+          notYet: (n, list) => 'Ещё не подали (' + n + '): ' + list,
+          contd: '(продолжение)',
+          announceFooter: 'Подавайте заявки офицеру.' },
+    en: { announce: (a, e) => '📢 [ALLIANCE: ' + a + '] CLAIMS OPEN (' + e + ')',
+          remind: (a, e) => '⏳ [ALLIANCE: ' + a + '] CLAIMS REMINDER (' + e + ')',
+          pcs: 'pcs', claims: n => 'claims: ' + n,
+          notYet: (n, list) => 'Not claimed yet (' + n + '): ' + list,
+          contd: '(continued)',
+          announceFooter: 'Send your claims to the officer.' }
+  });
+
   // v3.0.0: у чат ідуть обидві назви предмета — мовою інтерфейсу першою, далі друга через «/».
   // Гравці сидять у клієнтах різних мов, і одна назва не дає їм зрозуміти, про що йдеться.
   function itemNamesForChat(item, lang) {
@@ -671,10 +753,42 @@ const LMCore = (() => {
     return primary + ' / ' + other;
   }
 
+  /* ===== Discord (ТЗ §2.2, Етап 2) ===== */
+  // Суворий формат адреси: інакше застосунок міг би тихо відправити склад альянсу
+  // на чужий хост, якби адресу підмінили в імпортованому бекапі.
+  const WEBHOOK_RE = /^https:\/\/(?:discord|discordapp)\.com\/api\/(?:v\d+\/)?webhooks\/\d+\/[\w-]+$/;
+  function isWebhookUrl(url) { return WEBHOOK_RE.test(String(url == null ? '' : url).trim()); }
+
+  const DISCORD_LIMIT = 2000;
+  // Ліміт Discord — 2000 символів на повідомлення. Ріжемо по межах рядків: розрив
+  // усередині рядка звіту робить його нечитабельним.
+  function splitForDiscord(text, limit) {
+    const max = Number(limit) > 0 ? Number(limit) : DISCORD_LIMIT;
+    const src = String(text == null ? '' : text);
+    if (src.trim() === '') return [];
+    const out = [];
+    let buf = '';
+    const flush = () => { if (buf !== '') { out.push(buf); buf = ''; } };
+    for (const rawLine of src.split('\n')) {
+      let line = rawLine;
+      while (line.length > max) {          // патологія: один рядок довший за ліміт
+        flush();
+        out.push(line.slice(0, max));
+        line = line.slice(max);
+      }
+      const candidate = buf === '' ? line : buf + '\n' + line;
+      if (candidate.length > max) { flush(); buf = line; }
+      else buf = candidate;
+    }
+    flush();
+    return out;
+  }
+
   // ТЗ §6 (v3.0.0): дві секції етапів; рядок на предмет усередині секції;
   // кілька вільних штук — одна позначка; 🎲/manual у текст не виводяться
   function formatReport({ allianceName, eventTypeName, positions, itemsById,
-                          playersById, classesById, topSet, lang, firstGroup }) {
+                          playersById, classesById, topSet, lang, firstGroup,
+                          mentionsById }) {
     const L = REPORT_I18N[lang] || REPORT_I18N.ru;
     const single = firstGroup === 'ALL';
     const first = firstGroup === 'B' ? 'B' : 'A';
@@ -699,8 +813,12 @@ const LMCore = (() => {
           if (!pos.winnerId) { freeCount++; continue; }
           const player = playersById[pos.winnerId];
           const nick = player ? player.nickname : '?';
+          // v5.0.0: у Discord замість ніка йде згадка — гравець отримує сповіщення.
+          // В ігровий чат mentionsById не передається: гра згадок не резолвить.
+          const mention = mentionsById && player ? mentionsById[player.id] : null;
+          const shown = mention ? '<@' + mention + '>' : nick;
           const topMark = topSet.has(pos.winnerId) ? ' [' + L.top + ']' : '';
-          entries.push((entries.length + 1) + '. ' + nick + topMark);
+          entries.push((entries.length + 1) + '. ' + shown + topMark);
         }
         const displayName = itemNamesForChat(item, lang);
         out.push('🔹 ' + displayName + ' (' + posList.length + ' ' + L.pcs + ') — ' +
@@ -722,6 +840,93 @@ const LMCore = (() => {
     }
     return L.header(allianceName, eventTypeName) + '\n\n' +
       blocks.join('\n\n') + '\n\n' + L.footer;
+  }
+
+  // Готові тіла запитів до вебхука. Розбиття живе тут, тож транспорт про ліміти
+  // не знає. parse: [] знешкоджує @everyone/@here і ролі, навіть якщо вони
+  // потрапили в нік або назву івенту.
+  const EMBED_COLOR = Object.freeze({ announce: 0x5865f2, remind: 0xfaa61a, report: 0x57f287 });
+  const EMBED_LIMIT = 4096;
+  // Мініатюра — іконка найріднішого предмета; порожній icon підміняється карткою з
+  // гри (обидві теки публікує deploy.sh). Локальні шляхи Discord не дістане, тому
+  // адреса лише абсолютна.
+  function embedThumb(items, lang, iconBase) {
+    if (!iconBase || !items || items.length === 0) return null;
+    const best = items.slice().sort((a, b) =>
+      (RARITY_RANK[b.rarity] || 0) - (RARITY_RANK[a.rarity] || 0))[0];
+    if (!best) return null;
+    if (best.icon) return iconBase + best.icon;
+    if (best.catalogUid) return iconBase + 'cards/' + best.catalogUid + '_' + lang + '.jpg';
+    return null;
+  }
+  // Пінги всередині embed Discord не надсилає — сповіщення йдуть лише з content.
+  // Тому картка завжди без згадок; про це попереджає підказка у вкладці 4.
+  function embedPayloads(kind, title, body, lang, thumbUrl) {
+    const L = DISCORD_I18N[lang] || DISCORD_I18N.ru;
+    return splitForDiscord(body, EMBED_LIMIT).map((description, i) => ({
+      content: '',
+      embeds: [Object.assign(
+        { title: i === 0 ? title : title + ' ' + L.contd,
+          description, color: EMBED_COLOR[kind] },
+        i === 0 && thumbUrl ? { thumbnail: { url: thumbUrl } } : {})],
+      allowed_mentions: { parse: [], users: [] }
+    }));
+  }
+
+  function buildReportPayloads({ format, lang, title, text, plainText, mentionIds,
+                                 items, iconBase }) {
+    if (format === 'embed') {
+      // Discord не рендерить згадки всередині embed: `<@id>` пішов би в канал сирою
+      // розміткою. Тому картка друкує ніки — версію без підстановки.
+      return embedPayloads('report', title || '', plainText != null ? plainText : text, lang,
+        embedThumb(items || [], lang, iconBase));
+    }
+    const users = [...new Set((mentionIds || []).filter(Boolean).map(String))];
+    return splitForDiscord(text).map(content =>
+      ({ content, allowed_mentions: { parse: [], users } }));
+  }
+
+  function plainPayloads(text) {
+    return splitForDiscord(text).map(content =>
+      ({ content, allowed_mentions: { parse: [], users: [] } }));
+  }
+  function buildAnnouncePayloads({ format, lang, allianceName, eventTypeName, drops,
+                                   itemsById, iconBase }) {
+    if (!drops || drops.length === 0) return [];
+    const L = DISCORD_I18N[lang] || DISCORD_I18N.ru;
+    const lines = drops.map(dr => '🔹 ' + itemNamesForChat(itemsById[dr.itemId], lang) +
+      ' — ' + dr.quantity + ' ' + L.pcs);
+    const head = L.announce(allianceName, eventTypeName);
+    const body = lines.join('\n') + '\n\n' + L.announceFooter;
+    if (format === 'embed') {
+      return embedPayloads('announce', head, body, lang,
+        embedThumb(drops.map(dr => itemsById[dr.itemId]).filter(Boolean), lang, iconBase));
+    }
+    return plainPayloads(head + '\n\n' + body);
+  }
+  // Нагадування нікого не пінгує: застосунок не знає, хто зараз онлайн, і адресний
+  // тичок усьому складу — шум, а не користь.
+  function buildRemindPayloads({ format, lang, allianceName, eventTypeName, drops, claims,
+                                 players, itemsById, iconBase }) {
+    if (!drops || drops.length === 0) return [];
+    const L = DISCORD_I18N[lang] || DISCORD_I18N.ru;
+    const cl = claims || {};
+    const lines = drops.map(dr => {
+      const n = Object.keys(cl).filter(pid => (cl[pid] || []).includes(dr.itemId)).length;
+      return '🔹 ' + itemNamesForChat(itemsById[dr.itemId], lang) + ' — ' +
+        dr.quantity + ' ' + L.pcs + ', ' + L.claims(n);
+    });
+    const silent = (players || [])
+      .filter(p => p.isActive !== false && !(cl[p.id] && cl[p.id].length))
+      .map(p => p.nickname);
+    const tail = silent.length ? '\n\n' + L.notYet(silent.length, silent.join(', ')) : '';
+    const head = L.remind(allianceName, eventTypeName);
+    const body = lines.join('\n') + tail;
+    if (format === 'embed') {
+      return embedPayloads('remind', head, body, lang,
+        embedThumb(drops.map(dr => itemsById[dr.itemId]).filter(Boolean), lang, iconBase));
+    }
+    return plainPayloads(head + '\n\n' + body);
   }
 
   // ТЗ §5.8, §3.3: групування позицій у записи історії зі снапшотами
@@ -753,9 +958,11 @@ const LMCore = (() => {
   }
 
   return { DEFAULTS, RARITY_RANK, uuid, defaultSettings, emptyDb, migrate, validateImport,
+           exportSnapshot, keepLocalWebhooks, isWebhookUrl, splitForDiscord,
+           buildReportPayloads, buildAnnouncePayloads, buildRemindPayloads,
            lastReceivedAt, distribute, topContributors, formatReport,
            buildRecords, mapCatalogRarity, validateCatalog, syncCatalog,
-           parseRoster, applyRoster, isPristine,
+           parseRoster, applyRoster, isPristine, parseDiscordIds, applyDiscordIds,
            groupForClassName, defaultFirstGroup };
 })();
 </script>
@@ -820,6 +1027,28 @@ const I18N = {
     sectHistory: n => '📜 История (' + n + ')', sectSettings: '⚙️ Настройки алгоритма',
     sectBackup: '💾 Резервная копия', del: 'Удалить',
     newAlliancePh: 'Название нового альянса', addAlliance: 'Добавить альянс',
+    fmtLabel: 'Формат сообщений в Discord', fmtText: 'Текст', fmtEmbed: 'Карточка',
+    fmtHint: 'Пинги работают только в текстовом формате',
+    dcAnnounce: 'Анонс в Discord', dcRemind: 'Напомнить в Discord',
+    dcNoDrops: 'Сначала добавьте добычу',
+    dcAnnounceOk: 'Анонс отправлен ✓', dcRemindOk: 'Напоминание отправлено ✓',
+    thDiscord: 'Discord ID', importIdsBtn: 'Импортировать Discord ID',
+    idsPh: 'Ник = 123456789012345678',
+    dcBadId: 'Discord ID — это 17–20 цифр',
+    idsResult: (u, unk, bad) => 'Обновлено: ' + u + ', неизвестных ников: ' + unk +
+      ', непонятных строк: ' + bad,
+    dcSend: 'Отправить в Discord', dcSent: 'Отправлено ✓',
+    dcSendLast: 'Отправить последний отчёт в Discord',
+    dcLastHint: 'Последний подтверждённый отчёт ещё не отправлен',
+    dcOk: 'Отчёт отправлен в Discord ✓',
+    hookLabel: 'Discord Webhook', hookPh: 'https://discord.com/api/webhooks/…',
+    hookTest: 'Проверить', dcTestMsg: 'Loot Manager подключён ✓',
+    dcTestOk: 'Сообщение отправлено ✓',
+    dcBadUrl: 'Адрес не похож на вебхук Discord',
+    dcGone: 'Вебхук отозван или адрес неверен',
+    dcHttp: s => 'Discord ответил HTTP ' + s,
+    dcNetwork: m => 'Не удалось отправить: ' + m,
+    dcFail: m => 'Ошибка отправки: ' + m,
     enterAllianceName: 'Введите название альянса.',
     allianceExists: 'Альянс с таким названием уже существует.',
     lastAlliance: 'Последний альянс удалить нельзя.',
@@ -921,6 +1150,28 @@ const I18N = {
     sectHistory: n => '📜 History (' + n + ')', sectSettings: '⚙️ Algorithm settings',
     sectBackup: '💾 Backup', del: 'Delete',
     newAlliancePh: 'New alliance name', addAlliance: 'Add alliance',
+    fmtLabel: 'Discord message format', fmtText: 'Plain text', fmtEmbed: 'Embed card',
+    fmtHint: 'Mentions only work in plain text format',
+    dcAnnounce: 'Announce in Discord', dcRemind: 'Remind in Discord',
+    dcNoDrops: 'Add the loot first',
+    dcAnnounceOk: 'Announcement sent ✓', dcRemindOk: 'Reminder sent ✓',
+    thDiscord: 'Discord ID', importIdsBtn: 'Import Discord IDs',
+    idsPh: 'Nick = 123456789012345678',
+    dcBadId: 'A Discord ID is 17–20 digits',
+    idsResult: (u, unk, bad) => 'Updated: ' + u + ', unknown nicknames: ' + unk +
+      ', bad lines: ' + bad,
+    dcSend: 'Send to Discord', dcSent: 'Sent ✓',
+    dcSendLast: 'Send the last report to Discord',
+    dcLastHint: 'The last confirmed report has not been sent',
+    dcOk: 'Report sent to Discord ✓',
+    hookLabel: 'Discord webhook', hookPh: 'https://discord.com/api/webhooks/…',
+    hookTest: 'Test', dcTestMsg: 'Loot Manager connected ✓',
+    dcTestOk: 'Message sent ✓',
+    dcBadUrl: 'This is not a Discord webhook address',
+    dcGone: 'Webhook revoked or address is wrong',
+    dcHttp: s => 'Discord answered HTTP ' + s,
+    dcNetwork: m => 'Send failed: ' + m,
+    dcFail: m => 'Send error: ' + m,
     enterAllianceName: 'Enter an alliance name.',
     allianceExists: 'An alliance with this name already exists.',
     lastAlliance: 'The last alliance cannot be deleted.',
@@ -1260,6 +1511,7 @@ function claimsOf(pid) {
 function invalidateCalc() {  // будь-яка зміна вхідних даних скидає ручні рішення й роли
   const d = draft();
   d.overrides = {}; d.rollMemo = {};
+  ui.dcSent = false;         // новий розрахунок — новий звіт, надіслати можна знову
 }
 
 // v3.1.0: ручний порядок плиток у пікері (числа — catalogUid).
@@ -1416,10 +1668,37 @@ function renderTab2() {
           '<button class="btn btn-primary btn-sm" id="btnQuickCreate">' + t('createAdd') + '</button>' +
         '</div>' +
       '</div>' +
+      (activeAlliance().webhookUrl
+        ? '<div class="row" style="margin-top:8px">' +
+            '<button class="btn btn-sm" id="btnDcAnnounce">' + t('dcAnnounce') + '</button>' +
+            '<button class="btn btn-sm" id="btnDcRemind">' + t('dcRemind') + '</button>' +
+          '</div>'
+        : '') +
     '</div>' +
     '<div class="card"><h2>' + t('claimsH2') + '</h2>' + claimsHtml + '</div>';
 
   const tab = document.getElementById('tab2');
+  const sendDc = async (btn, payloads, okKey) => {
+    if (payloads.length === 0) { banner(t('dcNoDrops')); return; }
+    btn.disabled = true;
+    try {
+      await DiscordWebhookService.send(activeAlliance().webhookUrl, payloads);
+      banner(t(okKey));
+    } catch (err) { banner(t('dcFail', err.message)); }
+    btn.disabled = false;
+  };
+  tab.querySelector('#btnDcAnnounce')?.addEventListener('click', e =>
+    sendDc(e.target, LMCore.buildAnnouncePayloads({
+      format: db.settings.discordFormat, iconBase: ICON_BASE,
+      lang: lang(), allianceName: activeAlliance().name,
+      eventTypeName: d.eventTypeName || t('defaultEvent'),
+      drops: d.drops, itemsById }), 'dcAnnounceOk'));
+  tab.querySelector('#btnDcRemind')?.addEventListener('click', e =>
+    sendDc(e.target, LMCore.buildRemindPayloads({
+      format: db.settings.discordFormat, iconBase: ICON_BASE,
+      lang: lang(), allianceName: activeAlliance().name,
+      eventTypeName: d.eventTypeName || t('defaultEvent'),
+      drops: d.drops, claims: d.claims, players: pa().players, itemsById }), 'dcRemindOk'));
   tab.querySelector('#quickPick').addEventListener('click', e => {
     const pick = e.target.closest('button[data-iid]');
     if (!pick) return;
@@ -1523,9 +1802,36 @@ function addDrop(itemId, qty) {
   invalidateCalc(); save(); renderTab2();
 }
 /* ===== Вкладка 3: Розподіл (ТЗ §4.4, §5) ===== */
-// Етап 2 (ТЗ §2.2): DiscordWebhookService робитиме POST на settings.webhookUrl {content: text}
-const notificationService = {
-  async send(reportText) { /* NoopNotificationService — Етап 1 */ }
+/* ===== Discord (ТЗ §2.2) ===== */
+// Мініатюри в картці Discord тягне з опублікованого сайта: локальні шляхи
+// (file:// чи localhost) він не дістане.
+const ICON_BASE = 'https://yourbugsbynny.github.io/loot-manager/';
+const DiscordWebhookService = {
+  async send(url, payloads) {
+    if (!LMCore.isWebhookUrl(url)) throw new Error(t('dcBadUrl'));
+    // послідовно: паралельні запити Discord переставляє місцями
+    for (const payload of payloads) await this.post(url, payload, false);
+  },
+  async post(url, payload, retried) {
+    let res;
+    try {
+      res = await fetch(url + '?wait=true', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) { throw new Error(t('dcNetwork', err.message)); }
+    if (res.status === 429 && !retried) {
+      const body = await res.json().catch(() => ({}));
+      const waitMs = Math.min(10000, Math.ceil((Number(body.retry_after) || 1) * 1000));
+      await new Promise(r => setTimeout(r, waitMs));
+      return this.post(url, payload, true);
+    }
+    if (res.status === 401 || res.status === 403 || res.status === 404) {
+      throw new Error(t('dcGone'));
+    }
+    if (!res.ok) throw new Error(t('dcHttp', res.status));
+  }
 };
 
 function runCalc() {
@@ -1603,22 +1909,46 @@ function renderTab3() {
       allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || t('defaultEvent'),
       positions, itemsById, playersById, classesById: byId(db.classes), topSet,
       lang: lang(), firstGroup: d.firstGroup });
+    // v5.0.0: у чат — ніки, у Discord — згадки. Поле readonly, тож розбіжності
+    // «що бачу / що надішлеться» не буває: обидві версії з тих самих позицій.
+    const mentionsById = {};
+    for (const p of pa().players) if (p.discordId) mentionsById[p.id] = p.discordId;
+    ui.reportForDiscord = LMCore.formatReport({
+      allianceName: activeAlliance().name, eventTypeName: d.eventTypeName || t('defaultEvent'),
+      positions, itemsById, playersById, classesById: byId(db.classes), topSet,
+      lang: lang(), firstGroup: d.firstGroup, mentionsById });
+    ui.reportMentionIds = Object.values(mentionsById);
+    ui.reportItems = positions.map(p => itemsById[p.itemId]).filter(Boolean);
+    ui.reportPlain = reportText;   // версія з ніками — для картки й для буфера
     resultHtml =
       '<div class="card"><h2>' + t('resultH2') + '</h2>' + rows + '</div>' +
       '<div class="card"><h2>' + t('chatTextH2') + '</h2>' +
         '<textarea id="reportText" rows="10" readonly>' + escapeHtml(reportText) + '</textarea>' +
         '<div class="row" style="margin-top:8px">' +
           '<button class="btn" id="btnCopy">' + t('copyBtn') + '</button>' +
+          (activeAlliance().webhookUrl
+            ? '<button class="btn" id="btnSendDc"' + (ui.dcSent ? ' disabled' : '') + '>' +
+              (ui.dcSent ? t('dcSent') : t('dcSend')) + '</button>'
+            : '') +
           '<button class="btn btn-primary" id="btnConfirm">' + t('confirmBtn') + '</button>' +
         '</div></div>';
   }
+
+  // Відправка — окрема кнопка, а підтвердження очищує чернетку разом із текстом.
+  // Хто натиснув підтвердження першим, надсилає збережений звіт звідси.
+  const lr = pa().lastReport;
+  const lastReportHtml = (!ui.calcResult && lr && !lr.sentAt && activeAlliance().webhookUrl)
+    ? '<div class="card"><p class="muted small">' + t('dcLastHint') + '</p>' +
+      '<div class="row"><button class="btn" id="btnSendLast">' + t('dcSendLast') +
+      '</button></div></div>'
+    : '';
 
   document.getElementById('tab3').innerHTML =
     '<div class="card"><div class="row">' +
       '<button class="btn btn-primary" id="btnCalc"' + (canCalc ? '' : ' disabled') +
         '>' + t('calc') + '</button>' +
       (canCalc ? '' : '<span class="muted small">' + t('calcHint') + '</span>') +
-    '</div></div>' + resultHtml;
+    '</div></div>' + lastReportHtml + resultHtml;
 
   const tab = document.getElementById('tab3');
   tab.querySelector('#btnCalc').addEventListener('click', () => {
@@ -1627,6 +1957,7 @@ function renderTab3() {
       if (p.rolled && p.winnerId && !p.manual) draft().rollMemo[p.key] = p.winnerId;
     }
     ui.calcResult = res;
+    ui.dcSent = false;
     save(); renderTab3();
   });
   tab.querySelectorAll('.winnerSelect').forEach(sel =>
@@ -1639,6 +1970,7 @@ function renderTab3() {
         if (p.rolled && p.winnerId && !p.manual) draft().rollMemo[p.key] = p.winnerId;
       }
       ui.calcResult = res;
+      ui.dcSent = false;       // склад переможців змінився — звіт треба слати заново
       save(); renderTab3();
     }));
   tab.querySelector('#btnCopy')?.addEventListener('click', async () => {
@@ -1648,6 +1980,32 @@ function renderTab3() {
       ta.focus(); ta.select();
       banner(document.execCommand('copy') ? t('copied') : t('copyFail'));
     }
+  });
+  // У картці шапка стає заголовком embed, у тексті лишається першим рядком.
+  const reportPayloadArgs = () => {
+    const embed = db.settings.discordFormat === 'embed';
+    const [head, ...rest] = ui.reportForDiscord.split('\n');
+    return { format: db.settings.discordFormat, lang: lang(), iconBase: ICON_BASE,
+      title: head, text: embed ? rest.join('\n').trim() : ui.reportForDiscord,
+      plainText: ui.reportPlain.split('\n').slice(1).join('\n').trim(),
+      mentionIds: ui.reportMentionIds, items: ui.reportItems };
+  };
+  tab.querySelector('#btnSendDc')?.addEventListener('click', async e => {
+    e.target.disabled = true;
+    try {
+      await DiscordWebhookService.send(activeAlliance().webhookUrl,
+        LMCore.buildReportPayloads(reportPayloadArgs()));
+      ui.dcSent = true; banner(t('dcOk')); renderTab3();
+    } catch (err) { e.target.disabled = false; banner(t('dcFail', err.message)); }
+  });
+  tab.querySelector('#btnSendLast')?.addEventListener('click', async e => {
+    const rep = pa().lastReport;
+    e.target.disabled = true;
+    try {
+      await DiscordWebhookService.send(activeAlliance().webhookUrl,
+        LMCore.buildReportPayloads({ text: rep.text, mentionIds: rep.mentionIds || [] }));
+      rep.sentAt = nowISO(); save(); banner(t('dcOk')); renderTab3();
+    } catch (err) { e.target.disabled = false; banner(t('dcFail', err.message)); }
   });
   tab.querySelector('#btnConfirm')?.addEventListener('click', async () => {
     if (!ui.calcResult) return;
@@ -1661,10 +2019,14 @@ function renderTab3() {
     const evName = (d2.eventTypeName || '').trim();
     if (evName && !pa().eventTypes.includes(evName)) pa().eventTypes.push(evName);
     const text = tab.querySelector('#reportText').value;
+    pa().lastReport = { text: ui.reportForDiscord || text,
+      mentionIds: ui.reportMentionIds || [],
+      eventTypeName: d2.eventTypeName || t('defaultEvent'),
+      createdAt: nowISO(), sentAt: ui.dcSent ? nowISO() : null };
     pa().draftSession = null;
     ui.calcResult = null;
+    ui.dcSent = false;
     save();
-    try { await notificationService.send(text); } catch (err) { /* Етап 2 */ }
     banner(t('savedToHistory', records.length));
     renderTab3();
   });
@@ -1674,7 +2036,7 @@ const ROLES = ['Офіцер', 'Ветеран', 'Учасник'];
 ui.tab4open = ui.tab4open || new Set(['alliances']);
 ui.histFilter = ui.histFilter || { playerId: '', from: '', to: '' };
 
-function mutated() { ui.calcResult = null; save(); }
+function mutated() { ui.calcResult = null; ui.dcSent = false; save(); }
 function anyHistoryHasItem(itemId) {
   return Object.values(db.perAlliance).some(x => x.history.some(r => r.itemId === itemId));
 }
@@ -1700,6 +2062,14 @@ function renderTab4() {
         escapeHtml(a.name) + '" maxlength="40">' +
       '<button class="btn btn-sm btn-danger btnDelAlliance" data-aid="' + a.id + '">' +
         t('del') + '</button>' +
+      '</div>' +
+      '<div class="row small" style="margin:-2px 0 10px">' +
+        '<span class="muted">' + t('hookLabel') + '</span>' +
+        '<input type="text" class="inpAllianceHook grow" data-aid="' + a.id + '" value="' +
+          escapeHtml(a.webhookUrl || '') + '" placeholder="' + t('hookPh') +
+          '" spellcheck="false">' +
+        '<button class="btn btn-sm btnTestHook" data-aid="' + a.id + '"' +
+          (a.webhookUrl ? '' : ' disabled') + '>' + t('hookTest') + '</button>' +
       '</div>').join('') +
     '<div class="row" style="margin-top:8px">' +
       '<input type="text" id="inpNewAlliance" class="grow" placeholder="' + t('newAlliancePh') +
@@ -1711,7 +2081,8 @@ function renderTab4() {
     (r === sel ? ' selected' : '') + '>' + roleLabel(r) + '</option>').join('');
   const playersHtml = classFilterBar() +
     '<div class="table-wrap"><table><thead><tr><th>' + t('thNick') + '</th><th>' + t('thClass') +
-      '</th><th>' + t('thLevel') + '</th><th>' + t('thStatus') + '</th><th>' + t('thActive') +
+      '</th><th>' + t('thLevel') + '</th><th>' + t('thDiscord') +
+      '</th><th>' + t('thStatus') + '</th><th>' + t('thActive') +
       '</th><th></th></tr></thead><tbody>' +
     paData.players.filter(classFilterMatch).map(p =>
       '<tr' + (p.isActive ? '' : ' class="cancelled"') + '>' +
@@ -1720,6 +2091,9 @@ function renderTab4() {
       '<td><select class="selClass" data-pid="' + p.id + '">' + clsOptions(p.classId) + '</select></td>' +
       '<td><input type="number" class="inpLevel" data-pid="' + p.id + '" min="1" step="1" value="' +
         (p.level || '') + '" style="width:64px"></td>' +
+      '<td><input type="text" class="inpDiscordId" data-pid="' + p.id + '" value="' +
+        escapeHtml(p.discordId || '') + '" maxlength="20" style="width:150px" ' +
+        'inputmode="numeric" spellcheck="false"></td>' +
       '<td><select class="selRole" data-pid="' + p.id + '">' + roleOpts(p.role) + '</select></td>' +
       '<td><input type="checkbox" class="chkActive" data-pid="' + p.id + '"' +
         (p.isActive ? ' checked' : '') + '></td>' +
@@ -1737,6 +2111,13 @@ function renderTab4() {
         '" style="margin-top:8px"></textarea>' +
       '<div class="row" style="margin-top:6px">' +
         '<button class="btn btn-primary btn-sm" id="btnImportRoster">' + t('importRosterBtn') +
+        '</button></div></details>' +
+    '<details style="margin-top:10px"><summary class="small muted">' + t('importIdsBtn') +
+      '</summary>' +
+      '<textarea id="idsText" rows="6" placeholder="' + escapeHtml(t('idsPh')) +
+        '" style="margin-top:8px"></textarea>' +
+      '<div class="row" style="margin-top:6px">' +
+        '<button class="btn btn-primary btn-sm" id="btnImportIds">' + t('importIdsBtn') +
         '</button></div></details>';
 
   /* — Предмети — */
@@ -1843,6 +2224,14 @@ function renderTab4() {
         ' <select id="selLanguage">' + Object.keys(LANG_NAMES).map(code =>
           '<option value="' + code + '"' + (code === lang() ? ' selected' : '') + '>' +
           LANG_NAMES[code] + '</option>').join('') + '</select></label>' +
+      '<label class="inline small">' + t('fmtLabel') +
+        ' <select id="selDcFormat">' +
+          '<option value="text"' + (st.discordFormat !== 'embed' ? ' selected' : '') + '>' +
+            t('fmtText') + '</option>' +
+          '<option value="embed"' + (st.discordFormat === 'embed' ? ' selected' : '') + '>' +
+            t('fmtEmbed') + '</option>' +
+        '</select></label>' +
+      '<span class="muted small">' + t('fmtHint') + '</span>' +
     '</div><p class="small muted" style="margin:8px 0 4px">' + t('queueRule') + '</p>' +
     '<div class="row">' +
       '<label class="inline small"><input type="checkbox" id="chkUseTop"' +
@@ -1899,6 +2288,24 @@ function wireTab4() {
       if (!name) { e.target.value = a.name; return; }
       a.name = name; mutated(); renderHeader();
     }));
+  tab.querySelectorAll('.inpAllianceHook').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const a = db.alliances.find(x => x.id === e.target.dataset.aid);
+      const v = e.target.value.trim();
+      if (v && !LMCore.isWebhookUrl(v)) { banner(t('dcBadUrl')); return; }
+      a.webhookUrl = v; save(); renderTab4();
+    }));
+  tab.querySelectorAll('.btnTestHook').forEach(b =>
+    b.addEventListener('click', async e => {
+      const a = db.alliances.find(x => x.id === e.target.dataset.aid);
+      e.target.disabled = true;
+      try {
+        await DiscordWebhookService.send(a.webhookUrl,
+          [{ content: t('dcTestMsg'), allowed_mentions: { parse: [], users: [] } }]);
+        banner(t('dcTestOk'));
+      } catch (err) { banner(t('dcFail', err.message)); }
+      e.target.disabled = false;
+    }));
   tab.querySelectorAll('.btnDelAlliance').forEach(b =>
     b.addEventListener('click', e => {
       if (db.alliances.length <= 1) { banner(t('lastAlliance')); return; }
@@ -1949,6 +2356,19 @@ function wireTab4() {
       e.target.value = p.level || '';
       mutated();
     }));
+  tab.querySelectorAll('.inpDiscordId').forEach(inp =>
+    inp.addEventListener('change', e => {
+      const p = pa().players.find(x => x.id === e.target.dataset.pid);
+      const v = e.target.value.trim();
+      if (v && !/^\d{17,20}$/.test(v)) { banner(t('dcBadId')); e.target.value = p.discordId || ''; return; }
+      p.discordId = v || null; save();
+    }));
+  tab.querySelector('#btnImportIds').addEventListener('click', () => {
+    const parsed = LMCore.parseDiscordIds(tab.querySelector('#idsText').value);
+    const res = LMCore.applyDiscordIds(pa().players, parsed.pairs);
+    save(); renderTab4();
+    banner(t('idsResult', res.updated, res.unknown.length, parsed.bad.length));
+  });
   tab.querySelector('#btnImportRoster').addEventListener('click', () => {
     const parsed = LMCore.parseRoster(tab.querySelector('#rosterText').value);
     if (!parsed.ok) { banner(t('rosterFail', parsed.error)); return; }
@@ -2162,22 +2582,28 @@ function wireTab4() {
   tab.querySelector('#chkUseTop').addEventListener('change', e => {
     db.settings.useTop = e.target.checked; mutated();
   });
+  tab.querySelector('#selDcFormat').addEventListener('change', e => {
+    db.settings.discordFormat = e.target.value === 'embed' ? 'embed' : 'text';
+    save();
+  });
   tab.querySelector('#selLanguage').addEventListener('change', e => {
     db.settings.language = e.target.value;
     mutated(); renderAll();
   });
   tab.querySelector('#btnResetSettings').addEventListener('click', () => {
     if (!confirm(t('resetConfirm'))) return;
-    const wh = db.settings.webhookUrl, lg = db.settings.language;
+    const lg = db.settings.language, fmt = db.settings.discordFormat;
     db.settings = LMCore.defaultSettings();
-    db.settings.webhookUrl = wh;
     db.settings.language = lg;   // мова — не константа алгоритму, скидання її не чіпає
+    db.settings.discordFormat = fmt;
     mutated(); renderTab4();
   });
 
   /* Резервна копія */
   tab.querySelector('#btnExport').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+    // адреси вебхуків у файл не потрапляють — бекап пересилають (ТЗ §4.5)
+    const blob = new Blob([JSON.stringify(LMCore.exportSnapshot(db), null, 2)],
+      { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'lootmanager-backup-' + nowISO().slice(0, 10) + '.json';
@@ -2195,7 +2621,8 @@ function wireTab4() {
       const v = LMCore.validateImport(parsed);
       if (!v.ok) { banner(t('importRejected', v.error)); return; }
       if (!confirm(t('importConfirm', file.name))) return;
-      db = v.db; ui.calcResult = null; save(); renderAll(); renderTab4();
+      db = LMCore.keepLocalWebhooks(v.db, db);
+      ui.calcResult = null; save(); renderAll(); renderTab4();
       banner(t('imported'));
     };
     reader.readAsText(file);
